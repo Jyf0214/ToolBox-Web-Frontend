@@ -7,7 +7,8 @@ import { NextRequest, NextResponse } from 'next/server';
 
 const BACKEND_URL = process.env.BACKEND_API_URL || 'http://localhost:7860/api';
 
-// 配置 Route Segment Config (Next.js 15+ 推荐方式)
+// 启用边缘运行时，完美适配 EdgeOne, Cloudflare Pages 和 Netlify Edge
+export const runtime = 'edge';
 export const dynamic = 'force-dynamic';
 export const fetchCache = 'force-no-store';
 

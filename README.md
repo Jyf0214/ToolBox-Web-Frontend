@@ -15,6 +15,25 @@
 - `src/app/page.tsx`: 工具中心入口。
 - `src/app/tools/convert/`: 文档转换工具模块。
 
+## ☁️ 多平台部署支持
+
+项目已针对主流边缘计算平台进行优化，支持代理请求以隐藏后端。
+
+### 1. 腾讯云 EdgeOne Pages / Cloudflare Pages
+- **框架预设**: 选择 `Next.js`。
+- **构建命令**: `npm run build`。
+- **输出目录**: `.next` (或自动检测)。
+- **环境变量**: 在平台控制台设置 `BACKEND_API_URL`。
+- **优势**: 使用边缘运行时 (`edge`)，全球加速。
+
+### 2. Netlify Pages
+- 已内置 `netlify.toml`。
+- 直接连接 GitHub 仓库即可。
+- 在 `Site settings` -> `Environment variables` 中设置 `BACKEND_API_URL`。
+
+### 3. Vercel
+- 默认支持，自动识别。
+
 ## ⚙️ 环境配置 (关键)
 为了使前端能够与后端 API 通信，且不暴露后端地址，必须在 `Frontend` 根目录下创建 `.env.local` 文件：
 
