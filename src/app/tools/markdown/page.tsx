@@ -1,18 +1,40 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Layout, Typography, Button, Input, Card, message, Space, Breadcrumb, theme } from 'antd';
+import { Layout, Typography, Button, Input, Card, message, Space, Breadcrumb, theme, notification } from 'antd';
 import { ArrowLeft, FileDown, Loader2 } from 'lucide-react';
 import Link from 'next/link';
 
 const { Content } = Layout;
-const { Title, Text } = Typography;
+const { Title, Text, Paragraph } = Typography;
 const { TextArea } = Input;
 
 export default function MarkdownPage() {
   const [content, setContent] = useState('');
   const [loading, setLoading] = useState(false);
   const { token } = theme.useToken();
+
+  const showErrorLog = (msg: string, error: any, details?: string) => {
+    notification.error({
+      message: msg,
+      description: (
+        <div style={{ maxHeight: 300, overflow: 'auto' }}>
+          <div style={{ marginBottom: 8 }}>
+            <Text strong>错误原因:</Text> {error?.message || String(error) || '未知异常'}
+          </div>
+          {details && (
+            <div>
+              <Text strong>服务器原始反馈:</Text>
+              <pre style={{ fontSize: 11, background: '#f5f5f5', padding: 8, marginTop: 4, whiteSpace: 'pre-wrap', wordBreak: 'break-all', borderRadius: 4 }}>
+                {details}
+              </pre>
+            </div>
+          )}
+        </div>
+      ),
+      duration: 10,
+    } as any);
+  };
 
   const handleConvert = async () => {
     if (!content.trim()) {
@@ -28,26 +50,38 @@ export default function MarkdownPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ content, title: 'markdown_export' })
       });
+      
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`HTTP ${res.status}: ${text || '提交失败'}`);
+      }
+      
       const { jobId } = await res.json();
 
       // 2. 轮询状态
       const poll = async () => {
-        const statusRes = await fetch(`/api/proxy/convert/md/status/${jobId}`);
-        const data = await statusRes.json();
+        try {
+          const statusRes = await fetch(`/api/proxy/convert/md/status/${jobId}`);
+          const data = await statusRes.json();
 
-        if (data.status === 'completed') {
-          window.open(`/api/proxy/convert/md/download/${jobId}?token=${data.token}`, '_blank');
+          if (data.status === 'completed') {
+            window.open(`/api/proxy/convert/md/download/${jobId}?token=${data.token}`, '_blank');
+            setLoading(false);
+            message.success('转换成功！');
+          } else if (data.status === 'failed') {
+            showErrorLog('转换任务失败', data.error);
+            setLoading(false);
+          } else {
+            setTimeout(poll, 2000);
+          }
+        } catch (pollErr: any) {
+          showErrorLog('状态查询异常', pollErr);
           setLoading(false);
-          message.success('转换成功！');
-        } else if (data.status === 'failed') {
-          throw new Error(data.error);
-        } else {
-          setTimeout(poll, 2000);
         }
       };
       poll();
     } catch (err: any) {
-      message.error(`转换失败: ${err.message}`);
+      showErrorLog('请求提交失败', err);
       setLoading(false);
     }
   };

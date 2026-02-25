@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Upload, Button, Card, message, Typography, Space, Progress, List, theme, Empty, Switch, Badge } from 'antd';
+import { Upload, Button, Card, message, Typography, Space, Progress, List, theme, Empty, Switch, Badge, notification } from 'antd';
 import { InboxOutlined, FileTextOutlined, DownloadOutlined, PlayCircleOutlined, DeleteOutlined, CheckCircleFilled, CloseCircleFilled, LoadingOutlined, FileAddOutlined, FileZipOutlined } from '@ant-design/icons';
 import { useResponsive } from 'antd-style';
 
@@ -30,6 +30,31 @@ export const FileConverter: React.FC = () => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [makeEven, setMakeEven] = useState(false);
   const { mobile } = useResponsive();
+
+  // 显示详细错误日志弹窗
+  const showErrorLog = (msg: string, error: any, details?: string) => {
+    notification.error({
+      message: msg, // AntD 5+ 使用 message 作为标题
+      description: (
+        <div style={{ maxHeight: 300, overflow: 'auto' }}>
+          <div style={{ marginBottom: 8 }}>
+            <Text strong>错误详情:</Text> {error?.message || String(error) || '未知异常'}
+          </div>
+          {details && (
+            <div>
+              <Text strong>服务器原始响应:</Text>
+              <pre style={{ fontSize: 11, background: '#f5f5f5', padding: 8, marginTop: 4, whiteSpace: 'pre-wrap', wordBreak: 'break-all', borderRadius: 4 }}>
+                {details}
+              </pre>
+            </div>
+          )}
+        </div>
+      ),
+      duration: 15,
+      placement: 'topRight',
+      style: { width: mobile ? '100%' : 450 }
+    } as any); // 使用 as any 强制跳过可能由于版本导致的 ArgsProps 定义歧义
+  };
 
   const handleBeforeUpload = (file: File) => {
     const isDocx = file.name.endsWith('.docx');
@@ -73,22 +98,22 @@ export const FileConverter: React.FC = () => {
           await pollStatus(item.uid, data.jobId);
           resolve();
         } else {
-          let errorMsg = '上传失败';
+          let errorMsg = `HTTP ${xhr.status}`;
           try {
-            const errorData = JSON.parse(xhr.responseText);
-            errorMsg = errorData.message || errorData.error || errorMsg;
+            const errData = JSON.parse(xhr.responseText);
+            errorMsg = errData.message || errData.error || errorMsg;
           } catch {
-            errorMsg = `${xhr.status}: ${xhr.statusText || '上传失败'}`;
+            errorMsg = xhr.statusText || errorMsg;
           }
-          console.error(`[Upload] ${item.name} failed:`, xhr.status, xhr.responseText);
-          updateFileStatus(item.uid, { status: 'failed', error: errorMsg });
+          updateFileStatus(item.uid, { status: 'failed', error: '上传失败' });
+          showErrorLog(`上传失败: ${item.name}`, errorMsg, xhr.responseText);
           resolve();
         }
       };
 
       xhr.onerror = () => {
-        console.error(`[Upload] ${item.name} connection error`);
-        updateFileStatus(item.uid, { status: 'failed', error: '连接错误' });
+        updateFileStatus(item.uid, { status: 'failed', error: '网络错误' });
+        showErrorLog('网络请求异常', '无法连接到后端服务，请检查网络状态');
         resolve();
       };
 
@@ -111,15 +136,17 @@ export const FileConverter: React.FC = () => {
             jobId: data.jobId 
           });
         } else if (data.status === 'failed') {
-          updateFileStatus(uid, { status: 'failed', error: data.error });
+          updateFileStatus(uid, { status: 'failed', error: '处理失败' });
+          showErrorLog(`转换失败: ${jobId}`, data.error);
         } else {
           if (data.progress) {
             updateFileStatus(uid, { subProgress: data.progress });
           }
           setTimeout(check, 1500);
         }
-      } catch {
-        updateFileStatus(uid, { status: 'failed', error: '连接中断' });
+      } catch (err: any) {
+        updateFileStatus(uid, { status: 'failed', error: '查询中断' });
+        showErrorLog('状态查询异常', err);
       }
     };
     return check();
