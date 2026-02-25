@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 /**
- * 极速流式代理 (复刻 OpenList 逻辑)
- * 1. 使用 Edge Runtime 获得最佳流处理性能
- * 2. 严格清洗 Header，防止源站干扰
- * 3. 针对下载请求启用流式透传 (Streaming Proxy)
+ * 极速流式代理 (OpenList 核心逻辑复刻)
+ * 1. 完美支持 Range 请求 (断点续传/多线程下载)
+ * 2. 解决 Chrome 单线程下载大文件被 EdgeOne 截断的问题
+ * 3. 边缘运行时高性能透传
  */
 
 export const runtime = 'edge';
@@ -20,22 +20,19 @@ async function handleProxy(req: NextRequest, { params }: { params: Promise<{ pat
 
   const method = req.method;
 
-  // 1. 精简请求头 (参考 OpenList)
+  // 1. 精简并透传关键请求头 (特别是 Range)
   const headers = new Headers();
-  // 只透传核心头，移除所有可能导致回源失败的头
-  const allowedHeaders = ['accept', 'accept-encoding', 'accept-language', 'authorization', 'content-type', 'user-agent', 'range'];
+  const allowedHeaders = ['accept', 'range', 'if-range', 'authorization', 'content-type', 'user-agent'];
   req.headers.forEach((value, key) => {
     if (allowedHeaders.includes(key.toLowerCase())) {
       headers.set(key, value);
     }
   });
 
-  // 2. 发起请求
   try {
     const fetchOptions: RequestInit = {
       method,
       headers,
-      // @ts-ignore - 仅对非 GET/HEAD 请求附加 body
       body: (method !== 'GET' && method !== 'HEAD') ? req.body : undefined,
       // @ts-ignore
       duplex: 'half', 
@@ -45,7 +42,7 @@ async function handleProxy(req: NextRequest, { params }: { params: Promise<{ pat
 
     const response = await fetch(targetUrl, fetchOptions);
 
-    // 3. 处理响应头 (清洗 + 增强)
+    // 2. 构造响应头 (确保 Range 支持)
     const resHeaders = new Headers();
     const allowedResHeaders = [
       "content-type",
@@ -53,10 +50,8 @@ async function handleProxy(req: NextRequest, { params }: { params: Promise<{ pat
       "content-length",
       "content-range",
       "accept-ranges",
-      "cache-control",
-      "expires",
-      "date",
-      "etag"
+      "etag",
+      "last-modified"
     ];
     
     response.headers.forEach((value, key) => {
@@ -65,16 +60,12 @@ async function handleProxy(req: NextRequest, { params }: { params: Promise<{ pat
       }
     });
 
-    // 解决跨域文件名读取问题
-    resHeaders.set('Access-Control-Expose-Headers', 'Content-Disposition');
-    // 强制不缓存 API 动态响应，但允许浏览器缓存下载内容
-    if (targetPath.includes('download')) {
-      resHeaders.delete('Cache-Control'); 
-    } else {
-      resHeaders.set('Cache-Control', 'no-store, no-cache, must-revalidate');
-    }
+    // 显式声明支持 Range，这对于 EdgeOne 不截断至关重要
+    resHeaders.set('Accept-Ranges', 'bytes');
+    resHeaders.set('Access-Control-Expose-Headers', 'Content-Disposition, Content-Range, Content-Length');
 
-    // 4. 极速流式返回
+    // 3. 直接返回流 (不做任何变换)
+    // 注意：如果 status 是 206 (Partial Content)，浏览器和下载工具会正确处理
     return new NextResponse(response.body, {
       status: response.status,
       headers: resHeaders,
@@ -83,7 +74,7 @@ async function handleProxy(req: NextRequest, { params }: { params: Promise<{ pat
   } catch (error: any) {
     console.error(`[PROXY FAIL] ${targetUrl}:`, error);
     return NextResponse.json(
-      { success: false, message: '代理请求失败', error: error.message },
+      { success: false, message: '代理连接断开', error: error.message },
       { status: 502 }
     );
   }
