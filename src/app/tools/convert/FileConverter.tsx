@@ -7,8 +7,8 @@ import { useResponsive } from 'antd-style';
 
 const { Title, Text } = Typography;
 
-// 使用本地代理地址，对浏览器隐藏真实后端
-const API_BASE_URL = '/api/proxy/convert';
+// 修正代理基础路径，避免拼接时路径重复
+const API_BASE_URL = '/api/proxy';
 
 interface ConvertStatus {
   jobId: string;
