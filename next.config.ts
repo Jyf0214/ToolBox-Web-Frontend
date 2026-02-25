@@ -1,8 +1,6 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // 必须：允许边缘函数处理请求
-  runtime: 'edge',
   // 兼容性：确保在边缘节点上路径解析一致
   trailingSlash: false,
   // 生产环境优化
