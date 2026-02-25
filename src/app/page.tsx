@@ -1,105 +1,95 @@
 'use client';
 
 import React from 'react';
-import { ConfigProvider, App, Button } from 'antd';
+import { ConfigProvider, Layout, Typography, Grid, theme, Button, Space } from 'antd';
 import { FileConverter } from './components/FileConverter';
-import { Header, Footer, Hero, Features, Logo } from '@lobehub/ui';
-import { LucideZap, LucideShieldCheck, LucideLayoutDashboard, LucideGithub } from 'lucide-react';
-import { useResponsive } from 'antd-style';
+import { Github, FileText } from 'lucide-react';
 
-/**
- * ToolBox-Web 极简组件化主页
- * 完全基于 LobeUI 和 Ant Design 高级组件
- */
+const { Header, Content, Footer } = Layout;
+const { Title, Text } = Typography;
+const { useBreakpoint } = Grid;
+
 export default function Home() {
-  const { mobile } = useResponsive();
+  const screens = useBreakpoint();
+  const isMobile = !screens.md;
+  const { token } = theme.useToken();
 
   return (
     <ConfigProvider
       theme={{
         token: {
-          colorPrimary: '#1677ff',
-          borderRadius: 12,
+          colorPrimary: '#1f1f1f',
+          borderRadius: 8,
+          fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial",
+          fontSize: 14,
         },
+        components: {
+          Button: { controlHeight: 40, paddingContentHorizontal: 24 },
+          Layout: { headerBg: '#ffffff', bodyBg: '#f5f7fa' }
+        }
       }}
     >
-      <div style={{ backgroundColor: '#fff', minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
+      <Layout style={{ minHeight: '100vh' }}>
         <Header 
-          logo={<Logo extra="ToolBox" size={32} />}
-          nav={[
-            <Button key="docs" type="text" style={{ fontWeight: 600 }}>文档工具</Button>,
-            <Button key="about" type="text" style={{ fontWeight: 600 }}>关于项目</Button>
-          ]}
-          actions={[
-            <Button 
-              key="github" 
-              type="text" 
-              icon={<LucideGithub size={20} />} 
-              href="https://github.com/Jyf0214/ToolBox-Web"
-              target="_blank"
-            />
-          ]}
-        />
+          style={{ 
+            padding: isMobile ? '0 16px' : '0 40px',
+            borderBottom: '1px solid #eef0f2',
+            height: 64,
+            display: 'flex', 
+            alignItems: 'center', 
+            justifyContent: 'space-between',
+            position: 'sticky',
+            top: 0,
+            zIndex: 100,
+            background: '#fff'
+          }}
+        >
+          <Space align="center" size={12}>
+            <div style={{ 
+              width: 32, height: 32, borderRadius: 6, background: '#000', color: '#fff', 
+              display: 'flex', alignItems: 'center', justifyContent: 'center' 
+            }}>
+              <FileText size={18} strokeWidth={2.5} />
+            </div>
+            <Title level={5} style={{ margin: 0, fontWeight: 700, letterSpacing: '-0.01em' }}>ToolBox</Title>
+          </Space>
+          
+          <Button 
+            type="text" 
+            icon={<Github size={18} />} 
+            href="https://github.com/Jyf0214/ToolBox-Web" 
+            target="_blank"
+            style={{ color: '#666' }}
+          />
+        </Header>
         
-        <main style={{ paddingBottom: 80 }}>
-          <Hero
-            actions={[
-              {
-                link: '#',
-                text: '了解更多',
-                type: 'primary',
-              }
-            ]}
-            description="简单、极速、私有化的模块化文档工具箱。基于 LibreOffice 高性能内核，保护您的数据隐私。"
-            title="一站式文档<br/>格式转换工具"
-          />
+        <Content style={{ padding: isMobile ? '24px 16px' : '48px 24px', display: 'flex', justifyContent: 'center' }}>
+          <div style={{ width: '100%', maxWidth: 720 }}>
+            <div style={{ textAlign: 'center', marginBottom: 32 }}>
+              <Title level={2} style={{ margin: 0, fontWeight: 800, letterSpacing: '-0.02em' }}>
+                文档格式转换
+              </Title>
+              <Text type="secondary" style={{ fontSize: 16, marginTop: 8, display: 'block' }}>
+                支持 DOCX 转 PDF，无需登录
+              </Text>
+            </div>
 
-          <div style={{ maxWidth: 600, margin: '-60px auto 60px', width: '100%', padding: '0 16px', position: 'relative', zIndex: 10 }}>
             <FileConverter />
+
+            <div style={{ marginTop: 48, textAlign: 'center' }}>
+              <Space size={isMobile ? 16 : 40} split={<span style={{ color: '#ddd' }}>|</span>}>
+                <Text type="secondary">极速处理</Text>
+                <Text type="secondary">隐私安全</Text>
+                <Text type="secondary">完全免费</Text>
+              </Space>
+            </div>
           </div>
+        </Content>
 
-          <Features
-            items={[
-              {
-                description: '秒级响应的文档转换体验，无需等待。基于异步任务队列设计，确保任务处理高效可靠。',
-                icon: LucideZap,
-                title: '极速转换',
-              },
-              {
-                description: '不保留任何用户原始文件。转换完成立即自动清理，支持私有化部署，数据主权完全掌握在您手中。',
-                icon: LucideShieldCheck,
-                title: '隐私至上',
-              },
-              {
-                description: '适配所有终端。无论是手机还是桌面端，都能获得一致且极致的流畅交互体验。',
-                icon: LucideLayoutDashboard,
-                title: '响应式设计',
-              },
-            ]}
-          />
-        </main>
-
-        <Footer 
-          bottom={`ToolBox-Web © 2026 Crafted by Jyf0214`}
-          columns={[
-            {
-              title: '开源',
-              items: [
-                { title: 'GitHub', url: 'https://github.com/Jyf0214/ToolBox-Web', openExternal: true },
-                { title: '提交反馈', url: 'https://github.com/Jyf0214/ToolBox-Web/issues', openExternal: true },
-              ]
-            },
-            {
-              title: '技术栈',
-              items: [
-                { title: 'Next.js 16', url: 'https://nextjs.org', openExternal: true },
-                { title: 'Lobe UI', url: 'https://ui.lobehub.com', openExternal: true },
-                { title: 'Ant Design', url: 'https://ant.design', openExternal: true },
-              ]
-            }
-          ]}
-        />
-      </div>
+        <Footer style={{ textAlign: 'center', color: '#999', padding: '24px 0', fontSize: 13 }}>
+          © 2026 ToolBox. Open Source Project.
+        </Footer>
+      </Layout>
     </ConfigProvider>
   );
 }
