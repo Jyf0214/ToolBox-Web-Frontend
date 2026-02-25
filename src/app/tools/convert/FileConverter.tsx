@@ -1,8 +1,8 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Upload, Button, Card, message, Typography, Space, Progress, List, theme, Empty } from 'antd';
-import { InboxOutlined, FileTextOutlined, DownloadOutlined, PlayCircleOutlined, DeleteOutlined, CheckCircleFilled, CloseCircleFilled, LoadingOutlined } from '@ant-design/icons';
+import { Upload, Button, Card, message, Typography, Space, Progress, List, theme, Empty, Switch } from 'antd';
+import { InboxOutlined, FileTextOutlined, DownloadOutlined, PlayCircleOutlined, DeleteOutlined, CheckCircleFilled, CloseCircleFilled, LoadingOutlined, FileAddOutlined } from '@ant-design/icons';
 import { useResponsive } from 'antd-style';
 
 const { Title, Text } = Typography;
@@ -22,6 +22,7 @@ interface FileItem {
 export const FileConverter: React.FC = () => {
   const [fileList, setFileList] = useState<FileItem[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [makeEven, setMakeEven] = useState(false);
   const { mobile } = useResponsive();
   const { token: antdToken } = theme.useToken();
 
@@ -50,6 +51,7 @@ export const FileConverter: React.FC = () => {
     return new Promise<void>((resolve) => {
       const formData = new FormData();
       formData.append('file', item.file);
+      formData.append('makeEven', String(makeEven));
 
       const xhr = new XMLHttpRequest();
       
@@ -141,6 +143,19 @@ export const FileConverter: React.FC = () => {
   return (
     <Space direction="vertical" size={24} style={{ width: '100%' }}>
       <Card variant="borderless" style={{ borderRadius: 16, border: '1px solid #f0f0f0' }}>
+        <div style={{ marginBottom: 24, padding: '0 4px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <Space>
+            <FileAddOutlined style={{ color: '#8c8c8c' }} />
+            <Text>补全偶数页 (奇数页自动追加空白页)</Text>
+          </Space>
+          <Switch 
+            checked={makeEven} 
+            onChange={setMakeEven} 
+            disabled={isProcessing}
+            size="small"
+          />
+        </div>
+
         <Upload.Dragger
           multiple
           accept=".docx"
