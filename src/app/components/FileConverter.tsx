@@ -1,18 +1,11 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Upload, Button, Card, message, Typography, Space, Progress, Descriptions } from 'antd';
-import { FilePdfOutlined, FileWordOutlined, DownloadOutlined } from '@ant-design/icons';
-import styled from 'styled-components';
+import { Upload, Button, Card, message, Typography, Space, Progress, Descriptions, App } from 'antd';
+import { DownloadOutlined, InboxOutlined, LoadingOutlined } from '@ant-design/icons';
+import { useResponsive } from 'antd-style';
 
 const { Title, Text } = Typography;
-
-const StyledCard = styled(Card)`
-  max-width: 600px;
-  margin: 0 auto;
-  border-radius: 16px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
-`;
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:7860/api';
 
@@ -23,24 +16,20 @@ interface ConvertStatus {
   outputFileName?: string;
 }
 
-/**
- * 文件转换组件 (DOCX -> PDF)
- * 支持异步转换和 Token 验证下载
- */
 export const FileConverter: React.FC = () => {
+  const { modal, message: msg } = App.useApp();
   const [loading, setLoading] = useState(false);
   const [convertStatus, setConvertStatus] = useState<ConvertStatus | null>(null);
   const [progress, setProgress] = useState(0);
+  const { mobile } = useResponsive();
 
   const pollStatus = async (jobId: string, maxAttempts = 60) => {
     let attempts = 0;
-
     const checkStatus = async () => {
       attempts += 1;
       if (attempts > maxAttempts) {
-        message.error('转换超时，请重试');
+        msg.error('转换超时，请重试');
         setLoading(false);
-        setProgress(0);
         return;
       }
 
@@ -57,57 +46,45 @@ export const FileConverter: React.FC = () => {
           });
           setProgress(100);
           setLoading(false);
-          message.success('转换完成，请点击下载');
+          msg.success('转换成功！');
         } else if (data.status === 'failed') {
           setLoading(false);
-          setProgress(0);
-          message.error(`转换失败：${data.error || '未知错误'}`);
+          msg.error(`转换失败：${data.error || '未知错误'}`);
         } else {
-          setProgress((prev) => Math.min(prev + 10, 90));
-          setTimeout(checkStatus, 1000);
+          setProgress((prev) => Math.min(prev + 5, 95));
+          setTimeout(checkStatus, 1500);
         }
-      } catch (error) {
-        console.error('轮询状态失败:', error);
+      } catch {
         setLoading(false);
-        setProgress(0);
-        message.error('查询状态失败');
+        msg.error('查询状态失败');
       }
     };
-
     checkStatus();
   };
 
   const handleUpload = async (file: File) => {
     setLoading(true);
-    setProgress(20);
+    setProgress(10);
     setConvertStatus(null);
 
     const formData = new FormData();
     formData.append('file', file);
 
     try {
-      setProgress(50);
       const response = await fetch(`${API_BASE_URL}/convert/docx-to-pdf`, {
         method: 'POST',
         body: formData,
       });
 
-      if (!response.ok) {
-        throw new Error('提交失败');
-      }
-
+      if (!response.ok) throw new Error('提交失败');
       const data = await response.json();
-      setProgress(70);
-
-      // 轮询查询状态
       pollStatus(data.jobId);
     } catch {
-      message.error('提交失败，请检查后端服务');
+      msg.error('服务连接失败');
       setLoading(false);
       setProgress(0);
     }
-
-    return false; // 阻止默认上传行为
+    return false;
   };
 
   const handleDownload = () => {
@@ -117,73 +94,88 @@ export const FileConverter: React.FC = () => {
   };
 
   return (
-    <StyledCard>
-      <Space direction="vertical" size="large" style={{ width: '100%' }}>
-        <div style={{ textAlign: 'center' }}>
-          <Title level={3}>文档格式互转</Title>
-          <Text type="secondary">目前支持 DOCX 转换为 PDF (基于 LibreOffice)</Text>
-        </div>
-
-        <Upload.Dragger
-          accept=".docx"
-          beforeUpload={handleUpload}
-          showUploadList={false}
-          disabled={loading || !!convertStatus}
-        >
-          <p className="ant-upload-drag-icon">
-            {loading ? (
-              <FilePdfOutlined spin style={{ color: '#1677ff' }} />
-            ) : (
-              <FileWordOutlined style={{ color: '#2b579a' }} />
-            )}
-          </p>
-          <p className="ant-upload-text">点击或拖拽 DOCX 文件到此处进行转换</p>
-          <p className="ant-upload-hint">支持单个文件上传，转换完成后可下载</p>
-        </Upload.Dragger>
+    <Card 
+      variant="borderless"
+      style={{ 
+        width: '100%', 
+        borderRadius: 24, 
+        boxShadow: '0 8px 32px rgba(0,0,0,0.05)',
+        textAlign: 'left'
+      }}
+    >
+      <Space direction="vertical" size={24} style={{ width: '100%' }}>
+        {!loading && !convertStatus && (
+          <Upload.Dragger
+            accept=".docx"
+            beforeUpload={handleUpload}
+            showUploadList={false}
+            style={{ borderRadius: 16, background: '#fcfcfc', border: '2px dashed #eee' }}
+          >
+            <p className="ant-upload-drag-icon">
+              <InboxOutlined style={{ fontSize: 48, color: '#1677ff' }} />
+            </p>
+            <p className="ant-upload-text" style={{ fontSize: 16, fontWeight: 600 }}>点击或拖拽 DOCX 文件</p>
+            <p className="ant-upload-hint">支持 DOCX 转 PDF，处理完成后将自动提供下载</p>
+          </Upload.Dragger>
+        )}
 
         {(loading || convertStatus) && (
-          <Card size="small" title="转换进度">
-            <Descriptions column={1} size="small">
-              <Descriptions.Item label="状态">
-                <Space>
-                  {loading ? (
-                    <Text type="warning">转换中...</Text>
-                  ) : convertStatus?.status === 'completed' ? (
-                    <Text type="success">✓ 已完成</Text>
-                  ) : (
-                    <Text type="danger">✗ 失败</Text>
-                  )}
-                </Space>
+          <Card 
+            styles={{ body: { padding: mobile ? 16 : 24, background: '#f8faff', borderRadius: 16 } }}
+            variant="borderless"
+          >
+            <Descriptions column={1} size="small" colon={false}>
+              <Descriptions.Item label={<Text type="secondary">当前进度</Text>}>
+                {loading ? (
+                  <Space><LoadingOutlined style={{ color: '#1677ff' }} /><Text strong>正在转换...</Text></Space>
+                ) : (
+                  <Text type="success" strong>✓ 转换完成</Text>
+                )}
               </Descriptions.Item>
               {convertStatus?.outputFileName && (
-                <Descriptions.Item label="文件名">{convertStatus.outputFileName}</Descriptions.Item>
+                <Descriptions.Item label={<Text type="secondary">输出文件</Text>}>
+                  <Text strong ellipsis>{convertStatus.outputFileName}</Text>
+                </Descriptions.Item>
               )}
             </Descriptions>
             <Progress
               percent={progress}
-              status={loading ? 'active' : convertStatus?.status === 'completed' ? 'success' : 'exception'}
+              status={loading ? 'active' : 'success'}
+              showInfo={!mobile}
+              style={{ marginTop: 16 }}
             />
           </Card>
         )}
 
         {convertStatus?.status === 'completed' && (
-          <Button type="primary" icon={<DownloadOutlined />} onClick={handleDownload} block>
-            下载转换后的文件
-          </Button>
+          <Space direction="vertical" style={{ width: '100%' }} size={12}>
+            <Button 
+              type="primary" 
+              icon={<DownloadOutlined />} 
+              onClick={handleDownload} 
+              block 
+              size="large"
+              shape="round"
+              style={{ height: 48, fontWeight: 600 }}
+            >
+              下载转换结果
+            </Button>
+            <Button 
+              type="link" 
+              onClick={() => { setConvertStatus(null); setProgress(0); }} 
+              block
+            >
+              继续转换其他文件
+            </Button>
+          </Space>
         )}
 
-        {(convertStatus?.status === 'completed' || convertStatus?.status === 'failed') && (
-          <Button
-            onClick={() => {
-              setConvertStatus(null);
-              setProgress(0);
-            }}
-            block
-          >
-            转换新文件
+        {convertStatus?.status === 'failed' && (
+          <Button danger onClick={() => setConvertStatus(null)} block size="large" shape="round">
+            重新尝试
           </Button>
         )}
       </Space>
-    </StyledCard>
+    </Card>
   );
 };
