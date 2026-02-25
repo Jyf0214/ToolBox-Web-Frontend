@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { Upload, Button, Card, message, Typography, Space, Progress, List, theme, Empty, Switch, Badge, notification } from 'antd';
-import { InboxOutlined, FileTextOutlined, DownloadOutlined, PlayCircleOutlined, DeleteOutlined, CheckCircleFilled, CloseCircleFilled, LoadingOutlined, FileAddOutlined, FileZipOutlined } from '@ant-design/icons';
+import { InboxOutlined, FileTextOutlined, DownloadOutlined, PlayCircleOutlined, DeleteOutlined, CheckCircleFilled, CloseCircleFilled, LoadingOutlined, FileAddOutlined, FileZipOutlined, CopyOutlined } from '@ant-design/icons';
 import { useResponsive } from 'antd-style';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -216,6 +216,17 @@ export const FileConverter: React.FC = () => {
     }
   };
 
+  const copyDownloadUrl = (item: FileItem) => {
+    if (item.token && item.jobId) {
+      const fullUrl = `${window.location.origin}${PROXY_PATH}/convert/download/${item.jobId}?token=${item.token}`;
+      navigator.clipboard.writeText(fullUrl).then(() => {
+        message.success('下载链接已复制到剪贴板');
+      }).catch(() => {
+        message.error('复制失败，请手动选择下载');
+      });
+    }
+  };
+
   return (
     <Card variant="borderless" style={{ borderRadius: 16, border: '1px solid #f0f0f0' }}>
       <div style={{ marginBottom: 20, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -250,7 +261,12 @@ export const FileConverter: React.FC = () => {
             renderItem={(item) => (
               <List.Item
                 actions={[
-                  item.status === 'completed' && <Button key="dl" type="link" icon={<DownloadOutlined />} onClick={() => downloadFile(item)}>下载</Button>,
+                  item.status === 'completed' && (
+                    <Space key="actions">
+                      <Button type="link" icon={<DownloadOutlined />} onClick={() => downloadFile(item)}>下载</Button>
+                      <Button type="text" icon={<CopyOutlined />} onClick={() => copyDownloadUrl(item)} title="复制下载链接" />
+                    </Space>
+                  ),
                   item.status === 'wait' && <Button key="rm" type="text" danger icon={<DeleteOutlined />} onClick={() => setFileList(prev => prev.filter(f => f.uid !== item.uid))} />
                 ].filter(Boolean) as React.ReactNode[]}
               >
