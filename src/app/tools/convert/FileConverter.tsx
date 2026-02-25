@@ -1,177 +1,216 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Upload, Button, Card, message, Typography, Space, Progress, Divider, Result } from 'antd';
-import { InboxOutlined, FileTextOutlined, DownloadOutlined, RedoOutlined } from '@ant-design/icons';
+import { Upload, Button, Card, message, Typography, Space, Progress, List, theme, Empty } from 'antd';
+import { InboxOutlined, FileTextOutlined, DownloadOutlined, PlayCircleOutlined, DeleteOutlined, CheckCircleFilled, CloseCircleFilled, LoadingOutlined } from '@ant-design/icons';
 import { useResponsive } from 'antd-style';
 
 const { Title, Text } = Typography;
-
-// 修正代理基础路径，避免拼接时路径重复
 const API_BASE_URL = '/api/proxy';
 
-interface ConvertStatus {
-  jobId: string;
-  status: 'pending' | 'processing' | 'completed' | 'failed';
-  downloadToken?: string;
-  outputFileName?: string;
+interface FileItem {
+  uid: string;
+  name: string;
+  file: File;
+  status: 'wait' | 'uploading' | 'processing' | 'completed' | 'failed';
+  progress: number;
+  jobId?: string;
+  token?: string;
+  error?: string;
 }
 
 export const FileConverter: React.FC = () => {
-  const [loading, setLoading] = useState(false);
-  const [convertStatus, setConvertStatus] = useState<ConvertStatus | null>(null);
-  const [progress, setProgress] = useState(0);
-  const [statusText, setStatusText] = useState('正在处理');
+  const [fileList, setFileList] = useState<FileItem[]>([]);
+  const [isProcessing, setIsProcessing] = useState(false);
   const { mobile } = useResponsive();
+  const { token: antdToken } = theme.useToken();
 
-  const reset = () => {
-    setLoading(false);
-    setConvertStatus(null);
-    setProgress(0);
-    setStatusText('正在处理');
+  const handleBeforeUpload = (file: File) => {
+    const isDocx = file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || file.name.endsWith('.docx');
+    if (!isDocx) {
+      message.error(`${file.name} 不是 DOCX 文件`);
+      return false;
+    }
+    const newItem: FileItem = {
+      uid: Math.random().toString(36).substring(7),
+      name: file.name,
+      file,
+      status: 'wait',
+      progress: 0,
+    };
+    setFileList(prev => [...prev, newItem]);
+    return false; // 阻止自动上传
   };
 
-  const pollStatus = async (jobId: string, maxAttempts = 60) => {
-    setStatusText('正在转换文档');
+  const removeFile = (uid: string) => {
+    setFileList(prev => prev.filter(f => f.uid !== uid));
+  };
+
+  const uploadFile = (item: FileItem) => {
+    return new Promise<void>((resolve) => {
+      const formData = new FormData();
+      formData.append('file', item.file);
+
+      const xhr = new XMLHttpRequest();
+      
+      xhr.upload.onprogress = (event) => {
+        if (event.lengthComputable) {
+          const percent = Math.floor((event.loaded / event.total) * 90);
+          updateFileStatus(item.uid, { progress: percent, status: 'uploading' });
+        }
+      };
+
+      xhr.onload = async () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          const data = JSON.parse(xhr.responseText);
+          updateFileStatus(item.uid, { jobId: data.jobId, status: 'processing', progress: 95 });
+          // 开始轮询
+          await pollStatus(item.uid, data.jobId);
+          resolve();
+        } else {
+          updateFileStatus(item.uid, { status: 'failed', error: '上传失败' });
+          resolve();
+        }
+      };
+
+      xhr.onerror = () => {
+        updateFileStatus(item.uid, { status: 'failed', error: '网络错误' });
+        resolve();
+      };
+
+      xhr.open('POST', `${API_BASE_URL}/convert/docx-to-pdf`);
+      xhr.send(formData);
+    });
+  };
+
+  const pollStatus = async (uid: string, jobId: string) => {
     let attempts = 0;
-    const checkStatus = async () => {
-      attempts += 1;
+    const maxAttempts = 60;
+
+    const check = async (): Promise<void> => {
+      attempts++;
       if (attempts > maxAttempts) {
-        message.error('转换超时');
-        reset();
+        updateFileStatus(uid, { status: 'failed', error: '转换超时' });
         return;
       }
+
       try {
-        const response = await fetch(`${API_BASE_URL}/convert/status/${jobId}`);
-        const data = await response.json();
+        const res = await fetch(`${API_BASE_URL}/convert/status/${jobId}`);
+        const data = await res.json();
+
         if (data.status === 'completed') {
-          setConvertStatus({
-            jobId: data.jobId,
-            status: 'completed',
-            downloadToken: data.downloadToken,
-            outputFileName: data.outputFileName,
+          updateFileStatus(uid, { 
+            status: 'completed', 
+            progress: 100, 
+            token: data.downloadToken,
+            jobId: data.jobId 
           });
-          setProgress(100);
-          setLoading(false);
-          message.success('转换成功');
         } else if (data.status === 'failed') {
-          setLoading(false);
-          message.error(`失败: ${data.error}`);
+          updateFileStatus(uid, { status: 'failed', error: data.error || '服务器错误' });
         } else {
-          // 转换阶段的模拟进度
-          setProgress((prev) => (prev < 95 ? prev + 2 : 98));
-          setTimeout(checkStatus, 1500);
+          setTimeout(check, 2000);
         }
       } catch {
-        reset();
+        updateFileStatus(uid, { status: 'failed', error: '连接中断' });
       }
     };
-    checkStatus();
+    return check();
   };
 
-  const handleUpload = (file: File) => {
-    setLoading(true);
-    setProgress(0);
-    setStatusText('正在上传文件');
-
-    const formData = new FormData();
-    formData.append('file', file);
-
-    const xhr = new XMLHttpRequest();
-
-    // 监听上传进度
-    xhr.upload.onprogress = (event) => {
-      if (event.lengthComputable) {
-        const percentComplete = Math.round((event.loaded / event.total) * 100);
-        // 上传阶段占进度的前 90%
-        setProgress(Math.floor(percentComplete * 0.9));
-      }
-    };
-
-    xhr.onload = () => {
-      if (xhr.status >= 200 && xhr.status < 300) {
-        const data = JSON.parse(xhr.responseText);
-        pollStatus(data.jobId);
-      } else {
-        message.error('上传失败');
-        reset();
-      }
-    };
-
-    xhr.onerror = () => {
-      message.error('网络错误，上传失败');
-      reset();
-    };
-
-    xhr.open('POST', `${API_BASE_URL}/convert/docx-to-pdf`);
-    xhr.send(formData);
-
-    return false;
+  const updateFileStatus = (uid: string, updates: Partial<FileItem>) => {
+    setFileList(prev => prev.map(f => f.uid === uid ? { ...f, ...updates } : f));
   };
 
-  const handleDownload = () => {
-    if (convertStatus?.downloadToken) {
-      window.open(`${API_BASE_URL}/convert/download/${convertStatus.jobId}?token=${convertStatus.downloadToken}`, '_blank');
+  const startAll = async () => {
+    const pending = fileList.filter(f => f.status === 'wait');
+    if (pending.length === 0) return;
+
+    setIsProcessing(true);
+    for (const item of pending) {
+      await uploadFile(item);
+    }
+    setIsProcessing(false);
+  };
+
+  const downloadFile = (item: FileItem) => {
+    if (item.token && item.jobId) {
+      window.open(`${API_BASE_URL}/convert/download/${item.jobId}?token=${item.token}`, '_blank');
     }
   };
 
   return (
-    <Card 
-      variant="borderless" 
-      style={{ 
-        width: '100%', 
-        borderRadius: 16, 
-        background: '#fff', 
-        border: '1px solid #f0f0f0',
-        padding: mobile ? 24 : 48
-      }}
-    >
-      {!loading && !convertStatus && (
+    <Space direction="vertical" size={24} style={{ width: '100%' }}>
+      <Card variant="borderless" style={{ borderRadius: 16, border: '1px solid #f0f0f0' }}>
         <Upload.Dragger
+          multiple
           accept=".docx"
-          beforeUpload={handleUpload}
+          beforeUpload={handleBeforeUpload}
           showUploadList={false}
-          style={{ 
-            background: '#fafafa', 
-            border: '2px dashed #e0e0e0', 
-            borderRadius: 12, 
-            padding: 40 
-          }}
+          disabled={isProcessing}
+          style={{ padding: 24, background: '#fafafa', borderRadius: 12, border: '1px dashed #d9d9d9' }}
         >
-          <p className="ant-upload-drag-icon">
-            <InboxOutlined style={{ fontSize: 48, color: '#1f1f1f' }} />
-          </p>
-          <p className="ant-upload-text" style={{ fontSize: 18, fontWeight: 600, marginTop: 16 }}>
-            把文件拖到这里
-          </p>
-          <p className="ant-upload-hint" style={{ color: '#888' }}>
-            支持 DOCX 格式，最大 50MB
-          </p>
+          <p className="ant-upload-drag-icon"><InboxOutlined style={{ color: '#1f1f1f' }} /></p>
+          <Title level={5}>选择或拖拽多个 DOCX 文件</Title>
+          <Text type="secondary">文件将暂时保存在待上传列表</Text>
         </Upload.Dragger>
-      )}
 
-      {loading && (
-        <div style={{ textAlign: 'center', padding: '40px 0' }}>
-          <Progress type="circle" percent={progress} strokeColor="#1f1f1f" />
-          <Title level={5} style={{ marginTop: 24 }}>{statusText}</Title>
-        </div>
-      )}
-
-      {convertStatus?.status === 'completed' && (
-        <Result
-          status="success"
-          title="转换成功"
-          subTitle={convertStatus.outputFileName}
-          extra={[
-            <Button type="primary" key="download" size="large" icon={<DownloadOutlined />} onClick={handleDownload} style={{ background: '#1f1f1f', borderColor: '#1f1f1f' }}>
-              下载文件
-            </Button>,
-            <Button key="retry" size="large" icon={<RedoOutlined />} onClick={reset}>
-              继续转换
-            </Button>,
-          ]}
-        />
-      )}
-    </Card>
+        {fileList.length > 0 && (
+          <div style={{ marginTop: 32 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <Text strong>{fileList.length} 个文件已就绪</Text>
+              <Space>
+                <Button 
+                  type="primary" 
+                  icon={<PlayCircleOutlined />} 
+                  onClick={startAll} 
+                  loading={isProcessing}
+                  disabled={fileList.every(f => f.status !== 'wait')}
+                  style={{ background: '#000', borderColor: '#000' }}
+                >
+                  开始转换
+                </Button>
+                <Button type="text" danger onClick={() => setFileList([])} disabled={isProcessing}>清空列表</Button>
+              </Space>
+            </div>
+            
+            <List
+              dataSource={fileList}
+              renderItem={(item) => (
+                <List.Item
+                  style={{ padding: '16px 0' }}
+                  actions={[
+                    item.status === 'completed' ? (
+                      <Button key="dl" type="link" icon={<DownloadOutlined />} onClick={() => downloadFile(item)}>下载</Button>
+                    ) : item.status === 'wait' ? (
+                      <Button key="rm" type="text" danger icon={<DeleteOutlined />} onClick={() => removeFile(item.uid)} />
+                    ) : null
+                  ]}
+                >
+                  <List.Item.Meta
+                    avatar={
+                      item.status === 'completed' ? <CheckCircleFilled style={{ color: '#52c41a', fontSize: 18 }} /> :
+                      item.status === 'failed' ? <CloseCircleFilled style={{ color: '#ff4d4f', fontSize: 18 }} /> :
+                      item.status === 'wait' ? <FileTextOutlined style={{ color: '#8c8c8c', fontSize: 18 }} /> :
+                      <LoadingOutlined style={{ color: '#1890ff', fontSize: 18 }} />
+                    }
+                    title={<Text strong={item.status === 'completed'}>{item.name}</Text>}
+                    description={
+                      <div style={{ marginTop: 8 }}>
+                        {item.status === 'failed' ? <Text type="danger">{item.error}</Text> :
+                         item.status === 'completed' ? <Text type="success">转换成功</Text> :
+                         <Progress percent={item.progress} size="small" strokeColor="#1f1f1f" />
+                        }
+                      </div>
+                    }
+                  />
+                </List.Item>
+              )}
+            />
+          </div>
+        )}
+        
+        {fileList.length === 0 && <Empty description="暂无待处理文件" style={{ padding: '40px 0' }} />}
+      </Card>
+    </Space>
   );
 };
