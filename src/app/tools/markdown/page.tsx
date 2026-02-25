@@ -4,15 +4,22 @@ import React, { useState } from 'react';
 import { Layout, Typography, Button, Input, Card, message, Space, Breadcrumb, theme, notification } from 'antd';
 import { ArrowLeft, FileDown, Loader2 } from 'lucide-react';
 import Link from 'next/link';
+import { useResponsive } from 'antd-style';
 
 const { Content } = Layout;
 const { Title, Text, Paragraph } = Typography;
 const { TextArea } = Input;
 
+// 注意：这里不再是 API 路由，而是匹配 next.config.ts 中的 rewrites
+const PROXY_PATH = '/api/proxy';
+// 优先使用直连地址下载以获得满速体验，否则回退到代理
+const DIRECT_API_URL = process.env.NEXT_PUBLIC_DIRECT_API_URL || PROXY_PATH;
+
 export default function MarkdownPage() {
   const [content, setContent] = useState('');
   const [loading, setLoading] = useState(false);
   const { token } = theme.useToken();
+  const { mobile } = useResponsive();
 
   const showErrorLog = (msg: string, error: any, details?: string) => {
     const truncatedDetails = details && details.length > 5000 
@@ -49,7 +56,8 @@ export default function MarkdownPage() {
         </div>
       ),
       duration: 10,
-      style: { width: 400 }
+      placement: 'topRight',
+      style: { width: mobile ? '90vw' : 400, padding: '12px 16px' }
     } as any);
   };
 
@@ -62,7 +70,7 @@ export default function MarkdownPage() {
     setLoading(true);
     try {
       // 1. 提交转换任务
-      const res = await fetch('/api/proxy/convert/md-to-pdf', {
+      const res = await fetch(`${PROXY_PATH}/convert/md-to-pdf`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ content, title: 'markdown_export' })
@@ -78,11 +86,12 @@ export default function MarkdownPage() {
       // 2. 轮询状态
       const poll = async () => {
         try {
-          const statusRes = await fetch(`/api/proxy/convert/md/status/${jobId}`);
+          const statusRes = await fetch(`${PROXY_PATH}/convert/md/status/${jobId}`);
           const data = await statusRes.json();
 
           if (data.status === 'completed') {
-            window.open(`/api/proxy/convert/md/download/${jobId}?token=${data.token}`, '_blank');
+            // 3. 下载 (走直连，提速)
+            window.open(`${DIRECT_API_URL}/convert/md/download/${jobId}?token=${data.token}`, '_blank');
             setLoading(false);
             message.success('转换成功！');
           } else if (data.status === 'failed') {

@@ -1,80 +1,96 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 /**
- * 腾讯云 EdgeOne 边缘函数适配 (Edge Runtime)
- * 1. 解决 Node 函数 6MB Payload 限制导致的 413 错误
- * 2. 强制流式转发 (Streaming)，支持大文件下载
- * 3. 保持后端 IP 隐藏
+ * 极速流式代理 (复刻 OpenList 逻辑)
+ * 1. 使用 Edge Runtime 获得最佳流处理性能
+ * 2. 严格清洗 Header，防止源站干扰
+ * 3. 针对下载请求启用流式透传 (Streaming Proxy)
  */
 
-export const runtime = 'edge'; 
+export const runtime = 'edge';
 export const dynamic = 'force-dynamic';
 
 const BACKEND_URL = process.env.BACKEND_API_URL || 'http://localhost:7860/api';
 
-export async function POST(req: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
-  return handleProxy(req, params);
-}
-
-export async function GET(req: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
-  return handleProxy(req, params);
-}
-
-async function handleProxy(req: NextRequest, paramsPromise: Promise<{ path: string[] }>) {
-  const { path: pathArray } = await paramsPromise;
+async function handleProxy(req: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
+  const { path: pathArray } = await params;
   const targetPath = (pathArray ?? []).join('/');
   const queryString = req.nextUrl.search;
   const targetUrl = `${BACKEND_URL}/${targetPath}${queryString}`;
 
-  // 复制请求头
+  const method = req.method;
+
+  // 1. 精简请求头 (参考 OpenList)
   const headers = new Headers();
+  // 只透传核心头，移除所有可能导致回源失败的头
+  const allowedHeaders = ['accept', 'accept-encoding', 'accept-language', 'authorization', 'content-type', 'user-agent', 'range'];
   req.headers.forEach((value, key) => {
-    if (!['host', 'connection', 'content-length'].includes(key.toLowerCase())) {
+    if (allowedHeaders.includes(key.toLowerCase())) {
       headers.set(key, value);
     }
   });
 
+  // 2. 发起请求
   try {
-    // 关键：使用 Fetch 的流式特性
-    const response = await fetch(targetUrl, {
-      method: req.method,
+    const fetchOptions: RequestInit = {
+      method,
       headers,
-      body: req.method !== 'GET' && req.method !== 'HEAD' ? req.body : undefined,
+      // @ts-ignore - 仅对非 GET/HEAD 请求附加 body
+      body: (method !== 'GET' && method !== 'HEAD') ? req.body : undefined,
       // @ts-ignore
-      duplex: 'half',
+      duplex: 'half', 
+      redirect: 'follow',
       cache: 'no-store'
-    });
+    };
 
-    // 复制响应头，确保 Content-Disposition 等关键头透传
+    const response = await fetch(targetUrl, fetchOptions);
+
+    // 3. 处理响应头 (清洗 + 增强)
     const resHeaders = new Headers();
+    const allowedResHeaders = [
+      "content-type",
+      "content-disposition",
+      "content-length",
+      "content-range",
+      "accept-ranges",
+      "cache-control",
+      "expires",
+      "date",
+      "etag"
+    ];
+    
     response.headers.forEach((value, key) => {
-      if (key.toLowerCase() !== 'content-encoding') {
+      if (allowedResHeaders.includes(key.toLowerCase())) {
         resHeaders.set(key, value);
       }
     });
 
-    // 解决跨域暴露头问题，确保文件名能被前端识别（如果需要）
+    // 解决跨域文件名读取问题
     resHeaders.set('Access-Control-Expose-Headers', 'Content-Disposition');
-    // 强制不缓存
-    resHeaders.set('Cache-Control', 'no-store, no-cache, must-revalidate');
+    // 强制不缓存 API 动态响应，但允许浏览器缓存下载内容
+    if (targetPath.includes('download')) {
+      resHeaders.delete('Cache-Control'); 
+    } else {
+      resHeaders.set('Cache-Control', 'no-store, no-cache, must-revalidate');
+    }
 
-    console.log(`[EDGE PROXY] ${req.method} ${targetUrl} -> ${response.status}`);
-
-    // 直接返回 response.body 开启流式传输
+    // 4. 极速流式返回
     return new NextResponse(response.body, {
       status: response.status,
       headers: resHeaders,
     });
 
   } catch (error: any) {
-    console.error(`[EDGE ERROR] ${targetUrl}:`, error.message);
+    console.error(`[PROXY FAIL] ${targetUrl}:`, error);
     return NextResponse.json(
-      { success: false, message: '边缘网关转发失败', error: error.message },
+      { success: false, message: '代理请求失败', error: error.message },
       { status: 502 }
     );
   }
 }
 
-export const PUT = POST;
-export const DELETE = POST;
-export const PATCH = POST;
+export const GET = handleProxy;
+export const POST = handleProxy;
+export const PUT = handleProxy;
+export const DELETE = handleProxy;
+export const PATCH = handleProxy;

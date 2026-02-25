@@ -10,6 +10,8 @@ const { Title, Text, Paragraph } = Typography;
 
 // 注意：这里不再是 API 路由，而是匹配 next.config.ts 中的 rewrites
 const PROXY_PATH = '/api/proxy';
+// 优先使用直连地址下载以获得满速体验，否则回退到代理
+const DIRECT_API_URL = process.env.NEXT_PUBLIC_DIRECT_API_URL || PROXY_PATH;
 
 interface FileItem {
   uid: string;
@@ -95,10 +97,10 @@ export const FileConverter: React.FC = () => {
   };
 
   const uploadFile = async (item: FileItem) => {
-    const CHUNK_SIZE = 4 * 1024 * 1024; // 保持 4MB，留足 Header 空间
+    const CHUNK_SIZE = 4 * 1024 * 1024; // 4MB per chunk
     const totalChunks = Math.ceil(item.file.size / CHUNK_SIZE);
     const uploadId = uuidv4();
-    const MAX_CONCURRENCY = 3; // 并发 3 个分块，充分利用带宽
+    const MAX_CONCURRENCY = 3; // 并发 3 个分块
     const MAX_RETRIES = 3; // 失败自动重试 3 次
 
     // 追踪已完成的分块数
@@ -121,7 +123,7 @@ export const FileConverter: React.FC = () => {
       try {
         const res = await new Promise<any>((resolve, reject) => {
           const xhr = new XMLHttpRequest();
-          xhr.timeout = 60000; // 60秒超时，防止死挂
+          xhr.timeout = 60000;
           xhr.onload = () => xhr.status >= 200 && xhr.status < 300 ? resolve(JSON.parse(xhr.responseText)) : reject(`HTTP ${xhr.status}`);
           xhr.onerror = () => reject('网络异常');
           xhr.ontimeout = () => reject('请求超时');
@@ -130,7 +132,6 @@ export const FileConverter: React.FC = () => {
         });
 
         completedChunks++;
-        // 平滑更新进度
         const uploadedPercent = Math.floor((completedChunks / totalChunks) * 90);
         updateFileStatus(item.uid, { progress: uploadedPercent, status: 'uploading' });
         return res;
@@ -143,7 +144,7 @@ export const FileConverter: React.FC = () => {
       }
     };
 
-    // 使用简单的并行池处理上传
+    // 并行上传池
     const pool = new Set<Promise<any>>();
     for (const index of chunkIndices) {
       if (pool.size >= MAX_CONCURRENCY) {
@@ -211,18 +212,20 @@ export const FileConverter: React.FC = () => {
 
   const downloadFile = (item: FileItem) => {
     if (item.token && item.jobId) {
-      const url = `${PROXY_PATH}/convert/download/${item.jobId}?token=${item.token}`;
+      // 关键修改：下载走直连，绕过 EdgeOne 函数限制
+      const url = `${DIRECT_API_URL}/convert/download/${item.jobId}?token=${item.token}`;
       window.open(url, '_blank');
     }
   };
 
   const copyDownloadUrl = (item: FileItem) => {
     if (item.token && item.jobId) {
-      const fullUrl = `${window.location.origin}${PROXY_PATH}/convert/download/${item.jobId}?token=${item.token}`;
+      const baseUrl = DIRECT_API_URL.startsWith('http') ? DIRECT_API_URL : window.location.origin + DIRECT_API_URL;
+      const fullUrl = `${baseUrl}/convert/download/${item.jobId}?token=${item.token}`;
       navigator.clipboard.writeText(fullUrl).then(() => {
-        message.success('下载链接已复制到剪贴板');
+        message.success('高速下载链接已复制');
       }).catch(() => {
-        message.error('复制失败，请手动选择下载');
+        message.error('复制失败');
       });
     }
   };
@@ -234,7 +237,6 @@ export const FileConverter: React.FC = () => {
       return;
     }
     
-    // 依次触发下载，间隔 500ms 防止浏览器拦截
     completedItems.forEach((item, index) => {
       setTimeout(() => {
         downloadFile(item);

@@ -40,9 +40,12 @@
 ```bash
 # 示例配置
 BACKEND_API_URL=http://your-backend-ip:7860/api
+# (可选) 直连下载加速，解决 CDN 代理限速问题
+NEXT_PUBLIC_DIRECT_API_URL=http://your-backend-ip:7860/api
 ```
 
-- **BACKEND_API_URL**: 后端 API 的真实路径（仅服务端可见）。
+- **BACKEND_API_URL**: 后端 API 的真实路径（仅服务端可见，用于代理请求）。
+- **NEXT_PUBLIC_DIRECT_API_URL**: 前端直连后端的地址。配置后，下载请求将绕过代理直接访问后端，极大提升下载速度。若不配置，默认回退到代理路径。
 - **安全保障**: 客户端（浏览器）现在只能看到 `/api/proxy/...`，无法获知真实 IP。
 - **日志**: 所有通过代理的错误都会记录在 Vercel / 服务端日志中。
 
