@@ -227,6 +227,22 @@ export const FileConverter: React.FC = () => {
     }
   };
 
+  const downloadAll = () => {
+    const completedItems = fileList.filter(f => f.status === 'completed');
+    if (completedItems.length === 0) {
+      message.warning('没有可下载的文件');
+      return;
+    }
+    
+    // 依次触发下载，间隔 500ms 防止浏览器拦截
+    completedItems.forEach((item, index) => {
+      setTimeout(() => {
+        downloadFile(item);
+      }, index * 800);
+    });
+    message.success(`已开始下载 ${completedItems.length} 个文件`);
+  };
+
   return (
     <Card variant="borderless" style={{ borderRadius: 16, border: '1px solid #f0f0f0' }}>
       <div style={{ marginBottom: 20, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -253,6 +269,9 @@ export const FileConverter: React.FC = () => {
             <Badge count={fileList.length} color="#000" offset={[10, 0]}><Text strong>处理列表</Text></Badge>
             <Space>
               <Button type="primary" icon={<PlayCircleOutlined />} onClick={startAll} loading={isProcessing} disabled={fileList.every(f => f.status !== 'wait')} style={{ background: '#000' }}>启动</Button>
+              {fileList.some(f => f.status === 'completed') && (
+                <Button icon={<DownloadOutlined />} onClick={downloadAll}>一键下载</Button>
+              )}
               <Button type="text" danger onClick={() => setFileList([])} disabled={isProcessing}>清空</Button>
             </Space>
           </div>
