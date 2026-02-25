@@ -34,27 +34,44 @@ export const FileConverter: React.FC = () => {
   const [makeEven, setMakeEven] = useState(false);
   const { mobile } = useResponsive();
 
+  // 极致优化的日志弹窗：小字体、性能防护、防卡顿
   const showErrorLog = (msg: string, error: any, details?: string) => {
+    const truncatedDetails = details && details.length > 5000 
+      ? details.substring(0, 5000) + '\n... [日志过长已截断]' 
+      : details;
+
     notification.error({
-      message: msg,
+      message: <Text strong style={{ fontSize: 13 }}>{msg}</Text>,
       description: (
-        <div style={{ maxHeight: 300, overflow: 'auto' }}>
-          <div style={{ marginBottom: 8 }}>
-            <Text strong>错误详情:</Text> {error?.message || String(error) || '未知异常'}
+        <div style={{ maxHeight: 200, overflowY: 'auto', overflowX: 'hidden' }}>
+          <div style={{ marginBottom: 4 }}>
+            <Text type="secondary" style={{ fontSize: 11 }}>原因:</Text>
+            <div style={{ fontSize: 12, color: '#ff4d4f', marginTop: 2 }}>{error?.message || String(error)}</div>
           </div>
-          {details && (
-            <div>
-              <Text strong>服务器响应:</Text>
-              <pre style={{ fontSize: 11, background: '#f5f5f5', padding: 8, marginTop: 4, whiteSpace: 'pre-wrap', wordBreak: 'break-all', borderRadius: 4 }}>
-                {details}
+          {truncatedDetails && (
+            <div style={{ marginTop: 8 }}>
+              <Text type="secondary" style={{ fontSize: 11 }}>反馈 (RAW):</Text>
+              <pre style={{ 
+                fontSize: 10, 
+                background: '#fafafa', 
+                padding: '6px 8px', 
+                marginTop: 4, 
+                whiteSpace: 'pre-wrap', 
+                wordBreak: 'break-all', 
+                borderRadius: 4,
+                color: '#888',
+                border: '1px solid #f0f0f0',
+                fontFamily: 'SFMono-Regular, Consolas, monospace'
+              }}>
+                {truncatedDetails}
               </pre>
             </div>
           )}
         </div>
       ),
-      duration: 15,
+      duration: 10,
       placement: 'topRight',
-      style: { width: mobile ? '100%' : 450 }
+      style: { width: mobile ? '90vw' : 400, padding: '12px 16px' }
     } as any);
   };
 
