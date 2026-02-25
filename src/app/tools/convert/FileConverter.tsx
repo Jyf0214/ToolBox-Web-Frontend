@@ -73,12 +73,21 @@ export const FileConverter: React.FC = () => {
           await pollStatus(item.uid, data.jobId);
           resolve();
         } else {
-          updateFileStatus(item.uid, { status: 'failed', error: '上传失败' });
+          let errorMsg = '上传失败';
+          try {
+            const errorData = JSON.parse(xhr.responseText);
+            errorMsg = errorData.message || errorData.error || errorMsg;
+          } catch {
+            errorMsg = `${xhr.status}: ${xhr.statusText || '上传失败'}`;
+          }
+          console.error(`[Upload] ${item.name} failed:`, xhr.status, xhr.responseText);
+          updateFileStatus(item.uid, { status: 'failed', error: errorMsg });
           resolve();
         }
       };
 
       xhr.onerror = () => {
+        console.error(`[Upload] ${item.name} connection error`);
         updateFileStatus(item.uid, { status: 'failed', error: '连接错误' });
         resolve();
       };
