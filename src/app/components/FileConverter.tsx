@@ -2,8 +2,7 @@
 
 import React, { useState } from 'react';
 import { Upload, Button, Card, message, Typography, Space, Progress, Descriptions } from 'antd';
-import { UploadOutlined, FilePdfOutlined, FileWordOutlined, DownloadOutlined } from '@ant-design/icons';
-import { DraggablePanel } from '@lobehub/ui';
+import { FilePdfOutlined, FileWordOutlined, DownloadOutlined } from '@ant-design/icons';
 import styled from 'styled-components';
 
 const { Title, Text } = Typography;
@@ -102,7 +101,7 @@ export const FileConverter: React.FC = () => {
 
       // 轮询查询状态
       pollStatus(data.jobId);
-    } catch (error) {
+    } catch {
       message.error('提交失败，请检查后端服务');
       setLoading(false);
       setProgress(0);

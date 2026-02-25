@@ -37,7 +37,10 @@ export default function Home() {
       <AppContainer>
         <Header 
           logo={<Title level={4} style={{ margin: 0 }}>ToolBox-Web</Title>}
-          nav={[{ label: '文档工具', key: 'docs' }, { label: 'API 状态', key: 'api' }]}
+          nav={[
+            <Text key="docs" strong style={{ cursor: 'pointer' }}>文档工具</Text>,
+            <Text key="api" strong style={{ cursor: 'pointer', marginLeft: 20 }}>API 状态</Text>
+          ]}
         />
         
         <ContentArea>

@@ -12,7 +12,7 @@
     "verify": "npm run type-check && npm run lint && npm run build"
   },
   "dependencies": {
-    "next": "15.1.0",
+    "next": "16.1.6",
     "react": "18.3.1",
     "react-dom": "18.3.1",
     "@ant-design/icons": "5.5.1",
@@ -29,8 +29,8 @@
     "@tailwindcss/postcss": "4",
     "tailwindcss": "4",
     "typescript": "5.7.2",
-    "eslint": "8.57.1",
-    "eslint-config-next": "15.1.0",
+    "eslint": "^9.17.0",
+    "eslint-config-next": "16.1.6",
     "@typescript-eslint/eslint-plugin": "8.18.2",
     "@typescript-eslint/parser": "8.18.2"
   },
