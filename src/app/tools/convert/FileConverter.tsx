@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { Upload, Button, Card, message, Typography, Space, Progress, List, theme, Empty, Switch, Badge, notification } from 'antd';
 import { InboxOutlined, FileTextOutlined, DownloadOutlined, PlayCircleOutlined, DeleteOutlined, CheckCircleFilled, CloseCircleFilled, LoadingOutlined, FileAddOutlined, FileZipOutlined } from '@ant-design/icons';
 import { useResponsive } from 'antd-style';
+import { v4 as uuidv4 } from 'uuid';
 
 const { Title, Text, Paragraph } = Typography;
 
@@ -76,43 +77,47 @@ export const FileConverter: React.FC = () => {
     return false;
   };
 
-  const uploadFile = (item: FileItem) => {
-    return new Promise<void>((resolve) => {
+  const uploadFile = async (item: FileItem) => {
+    const CHUNK_SIZE = 4 * 1024 * 1024; // 4MB per chunk
+    const totalChunks = Math.ceil(item.file.size / CHUNK_SIZE);
+    const uploadId = uuidv4();
+
+    for (let i = 0; i < totalChunks; i++) {
+      const start = i * CHUNK_SIZE;
+      const end = Math.min(item.file.size, start + CHUNK_SIZE);
+      const chunk = item.file.slice(start, end);
+
       const formData = new FormData();
-      formData.append('file', item.file);
+      formData.append('file', chunk);
+      formData.append('uploadId', uploadId);
+      formData.append('index', i.toString());
+      formData.append('total', totalChunks.toString());
+      formData.append('fileName', item.name);
       formData.append('makeEven', String(makeEven));
 
-      const xhr = new XMLHttpRequest();
-      xhr.upload.onprogress = (event) => {
-        if (event.lengthComputable) {
-          const percent = Math.floor((event.loaded / event.total) * 90);
-          updateFileStatus(item.uid, { progress: percent, status: 'uploading' });
+      try {
+        const res = await new Promise<any>((resolve, reject) => {
+          const xhr = new XMLHttpRequest();
+          xhr.onload = () => xhr.status >= 200 && xhr.status < 300 ? resolve(JSON.parse(xhr.responseText)) : reject(`HTTP ${xhr.status}`);
+          xhr.onerror = () => reject('网络连接失败');
+          
+          const uploadedPercent = Math.floor(((i + 1) / totalChunks) * 90);
+          updateFileStatus(item.uid, { progress: uploadedPercent, status: 'uploading' });
+
+          xhr.open('POST', `${PROXY_PATH}/convert/upload-chunk`);
+          xhr.send(formData);
+        });
+
+        if (res.merged) {
+          updateFileStatus(item.uid, { jobId: uploadId, status: 'processing', progress: 95 });
+          await pollStatus(item.uid, uploadId);
         }
-      };
-
-      xhr.onload = async () => {
-        if (xhr.status >= 200 && xhr.status < 300) {
-          const data = JSON.parse(xhr.responseText);
-          updateFileStatus(item.uid, { jobId: data.jobId, status: 'processing', progress: 95 });
-          await pollStatus(item.uid, data.jobId);
-          resolve();
-        } else {
-          updateFileStatus(item.uid, { status: 'failed', error: `HTTP ${xhr.status}` });
-          showErrorLog(`上传失败: ${item.name}`, `状态码: ${xhr.status}`, xhr.responseText);
-          resolve();
-        }
-      };
-
-      xhr.onerror = () => {
-        updateFileStatus(item.uid, { status: 'failed', error: '连接错误' });
-        showErrorLog('网络异常', '无法连接到网关，请检查 BACKEND_API_URL 或 CORS 配置');
-        resolve();
-      };
-
-      // 目标路径：/api/proxy/convert/docx-to-pdf
-      xhr.open('POST', `${PROXY_PATH}/convert/docx-to-pdf`);
-      xhr.send(formData);
-    });
+      } catch (err) {
+        updateFileStatus(item.uid, { status: 'failed', error: '分块上传失败' });
+        showErrorLog(`上传异常: ${item.name}`, `分块 ${i+1}/${totalChunks} 失败`, String(err));
+        break;
+      }
+    }
   };
 
   const pollStatus = async (uid: string, jobId: string) => {
