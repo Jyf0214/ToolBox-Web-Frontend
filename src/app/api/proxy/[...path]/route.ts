@@ -42,6 +42,15 @@ async function handleProxy(req: NextRequest, { params }: { params: Promise<{ pat
 
     // 处理响应
     const resHeaders = new Headers(response.headers);
+    
+    // 日志：打印关键 Header 以便排查
+    if (targetPath.includes('download')) {
+      console.log(`--- PROXY DOWNLOAD DEBUG ---`);
+      console.log(`Target: ${targetUrl}`);
+      console.log(`Backend Content-Disposition: ${resHeaders.get('content-disposition')}`);
+      console.log(`--- END DEBUG ---`);
+    }
+
     // 强制不缓存 API 响应
     resHeaders.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
     resHeaders.delete('content-encoding');
