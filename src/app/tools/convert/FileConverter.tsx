@@ -5,8 +5,10 @@ import { Upload, Button, Card, message, Typography, Space, Progress, List, theme
 import { InboxOutlined, FileTextOutlined, DownloadOutlined, PlayCircleOutlined, DeleteOutlined, CheckCircleFilled, CloseCircleFilled, LoadingOutlined, FileAddOutlined, FileZipOutlined } from '@ant-design/icons';
 import { useResponsive } from 'antd-style';
 
-const { Title, Text } = Typography;
-const API_BASE_URL = '/api/proxy';
+const { Title, Text, Paragraph } = Typography;
+
+// 注意：这里不再是 API 路由，而是匹配 next.config.ts 中的 rewrites
+const PROXY_PATH = '/api/proxy';
 
 interface FileItem {
   uid: string;
@@ -31,10 +33,9 @@ export const FileConverter: React.FC = () => {
   const [makeEven, setMakeEven] = useState(false);
   const { mobile } = useResponsive();
 
-  // 显示详细错误日志弹窗
   const showErrorLog = (msg: string, error: any, details?: string) => {
     notification.error({
-      message: msg, // AntD 5+ 使用 message 作为标题
+      message: msg,
       description: (
         <div style={{ maxHeight: 300, overflow: 'auto' }}>
           <div style={{ marginBottom: 8 }}>
@@ -42,7 +43,7 @@ export const FileConverter: React.FC = () => {
           </div>
           {details && (
             <div>
-              <Text strong>服务器原始响应:</Text>
+              <Text strong>服务器响应:</Text>
               <pre style={{ fontSize: 11, background: '#f5f5f5', padding: 8, marginTop: 4, whiteSpace: 'pre-wrap', wordBreak: 'break-all', borderRadius: 4 }}>
                 {details}
               </pre>
@@ -53,18 +54,16 @@ export const FileConverter: React.FC = () => {
       duration: 15,
       placement: 'topRight',
       style: { width: mobile ? '100%' : 450 }
-    } as any); // 使用 as any 强制跳过可能由于版本导致的 ArgsProps 定义歧义
+    } as any);
   };
 
   const handleBeforeUpload = (file: File) => {
     const isDocx = file.name.endsWith('.docx');
     const isZip = file.name.endsWith('.zip');
-    
     if (!isDocx && !isZip) {
-      message.error(`${file.name} 格式不支持 (仅支持 .docx 或 .zip)`);
+      message.error(`${file.name} 格式不支持`);
       return false;
     }
-    
     const newItem: FileItem = {
       uid: Math.random().toString(36).substring(7),
       name: file.name,
@@ -98,26 +97,20 @@ export const FileConverter: React.FC = () => {
           await pollStatus(item.uid, data.jobId);
           resolve();
         } else {
-          let errorMsg = `HTTP ${xhr.status}`;
-          try {
-            const errData = JSON.parse(xhr.responseText);
-            errorMsg = errData.message || errData.error || errorMsg;
-          } catch {
-            errorMsg = xhr.statusText || errorMsg;
-          }
-          updateFileStatus(item.uid, { status: 'failed', error: '上传失败' });
-          showErrorLog(`上传失败: ${item.name}`, errorMsg, xhr.responseText);
+          updateFileStatus(item.uid, { status: 'failed', error: `HTTP ${xhr.status}` });
+          showErrorLog(`上传失败: ${item.name}`, `状态码: ${xhr.status}`, xhr.responseText);
           resolve();
         }
       };
 
       xhr.onerror = () => {
-        updateFileStatus(item.uid, { status: 'failed', error: '网络错误' });
-        showErrorLog('网络请求异常', '无法连接到后端服务，请检查网络状态');
+        updateFileStatus(item.uid, { status: 'failed', error: '连接错误' });
+        showErrorLog('网络异常', '无法连接到网关，请检查 BACKEND_API_URL 或 CORS 配置');
         resolve();
       };
 
-      xhr.open('POST', `${API_BASE_URL}/convert/docx-to-pdf`);
+      // 目标路径：/api/proxy/convert/docx-to-pdf
+      xhr.open('POST', `${PROXY_PATH}/convert/docx-to-pdf`);
       xhr.send(formData);
     });
   };
@@ -125,7 +118,8 @@ export const FileConverter: React.FC = () => {
   const pollStatus = async (uid: string, jobId: string) => {
     const check = async (): Promise<void> => {
       try {
-        const res = await fetch(`${API_BASE_URL}/convert/status/${jobId}`);
+        const res = await fetch(`${PROXY_PATH}/convert/status/${jobId}`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
 
         if (data.status === 'completed') {
@@ -136,17 +130,15 @@ export const FileConverter: React.FC = () => {
             jobId: data.jobId 
           });
         } else if (data.status === 'failed') {
-          updateFileStatus(uid, { status: 'failed', error: '处理失败' });
-          showErrorLog(`转换失败: ${jobId}`, data.error);
+          updateFileStatus(uid, { status: 'failed', error: '转换失败' });
+          showErrorLog('转换任务异常', data.error);
         } else {
-          if (data.progress) {
-            updateFileStatus(uid, { subProgress: data.progress });
-          }
-          setTimeout(check, 1500);
+          if (data.progress) updateFileStatus(uid, { subProgress: data.progress });
+          setTimeout(check, 2000);
         }
       } catch (err: any) {
         updateFileStatus(uid, { status: 'failed', error: '查询中断' });
-        showErrorLog('状态查询异常', err);
+        showErrorLog('状态轮询失败', err);
       }
     };
     return check();
@@ -157,13 +149,19 @@ export const FileConverter: React.FC = () => {
   };
 
   const startAll = async () => {
-    const pending = fileList.filter(f => f.status === 'wait');
-    if (pending.length === 0) return;
     setIsProcessing(true);
+    const pending = fileList.filter(f => f.status === 'wait');
     for (const item of pending) {
       await uploadFile(item);
     }
     setIsProcessing(false);
+  };
+
+  const downloadFile = (item: FileItem) => {
+    if (item.token && item.jobId) {
+      const url = `${PROXY_PATH}/convert/download/${item.jobId}?token=${item.token}`;
+      window.open(url, '_blank');
+    }
   };
 
   return (
@@ -189,23 +187,18 @@ export const FileConverter: React.FC = () => {
       {fileList.length > 0 && (
         <div style={{ marginTop: 24 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
-            <Badge count={fileList.length} color="#000" offset={[10, 0]}><Text strong>待处理队列</Text></Badge>
+            <Badge count={fileList.length} color="#000" offset={[10, 0]}><Text strong>处理列表</Text></Badge>
             <Space>
-              <Button type="primary" icon={<PlayCircleOutlined />} onClick={startAll} loading={isProcessing} disabled={fileList.every(f => f.status !== 'wait')} style={{ background: '#000' }}>
-                启动
-              </Button>
+              <Button type="primary" icon={<PlayCircleOutlined />} onClick={startAll} loading={isProcessing} disabled={fileList.every(f => f.status !== 'wait')} style={{ background: '#000' }}>启动</Button>
               <Button type="text" danger onClick={() => setFileList([])} disabled={isProcessing}>清空</Button>
             </Space>
           </div>
-          
           <List
             dataSource={fileList}
             renderItem={(item) => (
               <List.Item
                 actions={[
-                  item.status === 'completed' && (
-                    <Button key="dl" type="link" icon={<DownloadOutlined />} onClick={() => window.open(`${API_BASE_URL}/convert/download/${item.jobId}?token=${item.token}`)}>下载</Button>
-                  ),
+                  item.status === 'completed' && <Button key="dl" type="link" icon={<DownloadOutlined />} onClick={() => downloadFile(item)}>下载</Button>,
                   item.status === 'wait' && <Button key="rm" type="text" danger icon={<DeleteOutlined />} onClick={() => setFileList(prev => prev.filter(f => f.uid !== item.uid))} />
                 ].filter(Boolean) as React.ReactNode[]}
               >
@@ -219,7 +212,7 @@ export const FileConverter: React.FC = () => {
                        item.subProgress ? (
                          <Space direction="vertical" style={{ width: '100%' }} size={0}>
                            <Progress percent={Math.round((item.subProgress.current / item.subProgress.total) * 100)} size="small" strokeColor="#000" />
-                           <Text type="secondary" style={{ fontSize: 12 }}>{item.subProgress.message} ({item.subProgress.current}/{item.subProgress.total})</Text>
+                           <Text type="secondary" style={{ fontSize: 12 }}>{item.subProgress.message}</Text>
                          </Space>
                        ) : <Progress percent={item.progress} size="small" strokeColor="#000" />
                       }
