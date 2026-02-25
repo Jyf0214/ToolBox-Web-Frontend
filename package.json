@@ -2,6 +2,14 @@
   "name": "toolbox-web-frontend",
   "version": "1.0.0",
   "private": true,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Jyf0214/ToolBox-Web-Frontend.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Jyf0214/ToolBox-Web-Frontend/issues"
+  },
+  "homepage": "https://github.com/Jyf0214/ToolBox-Web-Frontend#readme",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
