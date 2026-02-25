@@ -7,7 +7,8 @@ import { useResponsive } from 'antd-style';
 
 const { Title, Text } = Typography;
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:7860/api';
+// 使用本地代理地址，对浏览器隐藏真实后端
+const API_BASE_URL = '/api/proxy/convert';
 
 interface ConvertStatus {
   jobId: string;

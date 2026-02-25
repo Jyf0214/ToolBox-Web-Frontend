@@ -16,15 +16,16 @@
 - `src/app/tools/convert/`: 文档转换工具模块。
 
 ## ⚙️ 环境配置 (关键)
-为了使前端能够与后端 API 通信，必须在 `Frontend` 根目录下创建 `.env.local` 文件：
+为了使前端能够与后端 API 通信，且不暴露后端地址，必须在 `Frontend` 根目录下创建 `.env.local` 文件：
 
 ```bash
 # 示例配置
-NEXT_PUBLIC_API_URL=http://localhost:7860/api
+BACKEND_API_URL=http://your-backend-ip:7860/api
 ```
 
-- **NEXT_PUBLIC_API_URL**: 后端 API 的基础路径。
-- **注意**: 必须包含 `NEXT_PUBLIC_` 前缀，否则变量在浏览器端不可见。
+- **BACKEND_API_URL**: 后端 API 的真实路径（仅服务端可见）。
+- **安全保障**: 客户端（浏览器）现在只能看到 `/api/proxy/...`，无法获知真实 IP。
+- **日志**: 所有通过代理的错误都会记录在 Vercel / 服务端日志中。
 
 ## 🚀 本地开发
 
