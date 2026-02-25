@@ -95,19 +95,25 @@ export const FileConverter: React.FC = () => {
   };
 
   const uploadFile = async (item: FileItem) => {
-    const CHUNK_SIZE = 4 * 1024 * 1024; // 4MB per chunk
+    const CHUNK_SIZE = 4 * 1024 * 1024; // 保持 4MB，留足 Header 空间
     const totalChunks = Math.ceil(item.file.size / CHUNK_SIZE);
     const uploadId = uuidv4();
+    const MAX_CONCURRENCY = 3; // 并发 3 个分块，充分利用带宽
+    const MAX_RETRIES = 3; // 失败自动重试 3 次
 
-    for (let i = 0; i < totalChunks; i++) {
-      const start = i * CHUNK_SIZE;
+    // 追踪已完成的分块数
+    let completedChunks = 0;
+    const chunkIndices = Array.from({ length: totalChunks }, (_, i) => i);
+
+    const uploadChunkWithRetry = async (index: number, retryCount = 0): Promise<any> => {
+      const start = index * CHUNK_SIZE;
       const end = Math.min(item.file.size, start + CHUNK_SIZE);
       const chunk = item.file.slice(start, end);
 
       const formData = new FormData();
       formData.append('file', chunk);
       formData.append('uploadId', uploadId);
-      formData.append('index', i.toString());
+      formData.append('index', index.toString());
       formData.append('total', totalChunks.toString());
       formData.append('fileName', item.name);
       formData.append('makeEven', String(makeEven));
@@ -115,25 +121,49 @@ export const FileConverter: React.FC = () => {
       try {
         const res = await new Promise<any>((resolve, reject) => {
           const xhr = new XMLHttpRequest();
+          xhr.timeout = 60000; // 60秒超时，防止死挂
           xhr.onload = () => xhr.status >= 200 && xhr.status < 300 ? resolve(JSON.parse(xhr.responseText)) : reject(`HTTP ${xhr.status}`);
-          xhr.onerror = () => reject('网络连接失败');
-          
-          const uploadedPercent = Math.floor(((i + 1) / totalChunks) * 90);
-          updateFileStatus(item.uid, { progress: uploadedPercent, status: 'uploading' });
-
+          xhr.onerror = () => reject('网络异常');
+          xhr.ontimeout = () => reject('请求超时');
           xhr.open('POST', `${PROXY_PATH}/convert/upload-chunk`);
           xhr.send(formData);
         });
 
-        if (res.merged) {
-          updateFileStatus(item.uid, { jobId: uploadId, status: 'processing', progress: 95 });
-          await pollStatus(item.uid, uploadId);
-        }
+        completedChunks++;
+        // 平滑更新进度
+        const uploadedPercent = Math.floor((completedChunks / totalChunks) * 90);
+        updateFileStatus(item.uid, { progress: uploadedPercent, status: 'uploading' });
+        return res;
       } catch (err) {
-        updateFileStatus(item.uid, { status: 'failed', error: '分块上传失败' });
-        showErrorLog(`上传异常: ${item.name}`, `分块 ${i+1}/${totalChunks} 失败`, String(err));
-        break;
+        if (retryCount < MAX_RETRIES) {
+          console.warn(`[Retry] 分块 ${index} 失败，正在进行第 ${retryCount + 1} 次重试...`);
+          return uploadChunkWithRetry(index, retryCount + 1);
+        }
+        throw err;
       }
+    };
+
+    // 使用简单的并行池处理上传
+    const pool = new Set<Promise<any>>();
+    for (const index of chunkIndices) {
+      if (pool.size >= MAX_CONCURRENCY) {
+        await Promise.race(pool);
+      }
+      const task = uploadChunkWithRetry(index);
+      pool.add(task);
+      task.then(() => pool.delete(task)).catch(() => pool.delete(task));
+    }
+
+    try {
+      const results = await Promise.all(pool);
+      const lastRes = results.find(r => r && r.merged);
+      if (lastRes) {
+        updateFileStatus(item.uid, { jobId: uploadId, status: 'processing', progress: 95 });
+        await pollStatus(item.uid, uploadId);
+      }
+    } catch (err) {
+      updateFileStatus(item.uid, { status: 'failed', error: '上传重试失败' });
+      showErrorLog(`传输中断: ${item.name}`, '经过多次尝试后依然无法完成上传，请检查网络稳定性', String(err));
     }
   };
 
