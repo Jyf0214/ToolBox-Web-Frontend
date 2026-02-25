@@ -1,8 +1,8 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Upload, Button, Card, message, Typography, Space, Progress, List, theme, Empty, Switch, Badge, notification } from 'antd';
-import { InboxOutlined, FileTextOutlined, DownloadOutlined, PlayCircleOutlined, DeleteOutlined, CheckCircleFilled, CloseCircleFilled, LoadingOutlined, FileAddOutlined, FileZipOutlined, CopyOutlined } from '@ant-design/icons';
+import { Upload, Button, Card, message, Typography, Space, Progress, List, theme, Empty, Switch, Badge, notification, Alert } from 'antd';
+import { InboxOutlined, FileTextOutlined, DownloadOutlined, PlayCircleOutlined, DeleteOutlined, CheckCircleFilled, CloseCircleFilled, LoadingOutlined, FileAddOutlined, FileZipOutlined, CopyOutlined, InfoCircleOutlined } from '@ant-design/icons';
 import { useResponsive } from 'antd-style';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -29,6 +29,15 @@ interface FileItem {
     message: string;
   };
 }
+
+// 格式化文件大小
+const formatSize = (bytes: number) => {
+  if (bytes === 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+};
 
 export const FileConverter: React.FC = () => {
   const [fileList, setFileList] = useState<FileItem[]>([]);
@@ -252,6 +261,15 @@ export const FileConverter: React.FC = () => {
         <Switch checked={makeEven} onChange={setMakeEven} disabled={isProcessing} size="small" />
       </div>
 
+      <Alert
+        message="下载建议"
+        description="对于超过 4MB 的文件，推荐复制直链使用 IDM/ADM 等多线程工具下载，以避免 Chrome 等浏览器单线程下载可能出现的中断。"
+        type="info"
+        showIcon
+        icon={<InfoCircleOutlined />}
+        style={{ marginBottom: 20, borderRadius: 8, fontSize: 13 }}
+      />
+
       <Upload.Dragger
         multiple
         accept=".docx,.zip"
@@ -293,7 +311,12 @@ export const FileConverter: React.FC = () => {
               >
                 <List.Item.Meta
                   avatar={item.isZip ? <FileZipOutlined style={{ fontSize: 20, color: '#faad14' }} /> : <FileTextOutlined style={{ fontSize: 20, color: '#1890ff' }} />}
-                  title={<Text strong={item.status === 'completed'}>{item.name}</Text>}
+                  title={
+                    <Space>
+                      <Text strong={item.status === 'completed'}>{item.name}</Text>
+                      <Text type="secondary" style={{ fontSize: 12 }}>({formatSize(item.file.size)})</Text>
+                    </Space>
+                  }
                   description={
                     <div style={{ marginTop: 4 }}>
                       {item.status === 'failed' ? <Text type="danger">{item.error}</Text> :
