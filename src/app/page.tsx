@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { ConfigProvider, Layout, Typography, Grid, Card, Space } from 'antd';
-import { FileText, Github, ChevronRight } from 'lucide-react';
+import { FileText, Github, ChevronRight, FileDown } from 'lucide-react';
 import Link from 'next/link';
 
 const { Header, Content, Footer } = Layout;
@@ -19,6 +19,13 @@ export default function Home() {
       desc: '支持 DOCX 转 PDF，秒级处理',
       icon: <FileText size={24} />,
       path: '/tools/convert',
+      color: '#1f1f1f'
+    },
+    {
+      title: 'Markdown 转 PDF',
+      desc: '标准的 A4 纸张排版，极致精美',
+      icon: <FileDown size={24} />,
+      path: '/tools/markdown',
       color: '#1f1f1f'
     }
     // 未来可在此添加更多工具
