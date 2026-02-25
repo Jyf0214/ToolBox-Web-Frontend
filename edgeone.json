@@ -1,0 +1,9 @@
+{
+  "framework": "nextjs",
+  "buildCommand": "npm run build",
+  "outputDir": ".next",
+  "cleanUrls": true,
+  "env": {
+    "BACKEND_API_URL": "http://你的后端公网IP:7860/api"
+  }
+}
