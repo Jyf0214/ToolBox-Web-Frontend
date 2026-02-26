@@ -1,12 +1,13 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { Table, Tag, Space, Button, message, Popconfirm, Card, Typography, Descriptions, Spin } from 'antd';
+import { Table, Tag, Space, Button, message, Popconfirm, Card, Typography, Descriptions, Spin, Modal, Input } from 'antd';
 import { getAuthHeader } from '@/lib/auth';
 import { useResponsive } from 'antd-style';
 import { StopOutlined, CheckCircleOutlined, DeleteOutlined, AreaChartOutlined } from '@ant-design/icons';
 
 const { Title, Text } = Typography;
+const { TextArea } = Input;
 
 interface UserItem {
   id?: string | number;
@@ -15,7 +16,9 @@ interface UserItem {
   email?: string;
   role: 'ADMIN' | 'USER';
   status: 'ACTIVE' | 'BANNED';
+  banReason?: string;
   createdAt: string;
+  avatar?: string;
 }
 
 interface UsageStats {
@@ -29,6 +32,9 @@ export default function UsersPage() {
   const [loading, setLoading] = useState(false);
   const [usageLoading, setUsageLoading] = useState<Record<string, boolean>>({});
   const [usageData, setUsageData] = useState<Record<string, UsageStats>>({});
+  const [banModalVisible, setBanModalVisible] = useState(false);
+  const [currentBanningUser, setCurrentBanningUser] = useState<UserItem | null>(null);
+  const [banReason, setBanReason] = useState('');
   const { mobile } = useResponsive();
 
   const fetchUsers = async () => {
@@ -42,29 +48,29 @@ export default function UsersPage() {
 
   const fetchUsage = async (record: UserItem) => {
     const id = String(record.id || record._id);
-    if (usageData[id]) return; // 已加载则跳过
-
+    if (usageData[id]) return;
     setUsageLoading(prev => ({ ...prev, [id]: true }));
     try {
       const res = await fetch(`/api/proxy/users/${id}/usage`, { headers: getAuthHeader() });
       const data = await res.json();
       if (data.success) setUsageData(prev => ({ ...prev, [id]: data.data }));
-    } catch { message.error('用量加载失败'); } finally {
-      setUsageLoading(prev => ({ ...prev, [id]: false }));
-    }
+    } catch { message.error('用量加载失败'); } finally { setUsageLoading(prev => ({ ...prev, [id]: false })); }
   };
 
   useEffect(() => { fetchUsers(); }, []);
 
-  const toggleStatus = async (record: UserItem) => {
+  const handleToggleStatus = async (record: UserItem, reason?: string) => {
     const id = record.id || record._id;
     try {
       const res = await fetch(`/api/proxy/users/${id}/status`, {
         method: 'PATCH',
-        headers: getAuthHeader()
+        headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
+        body: JSON.stringify({ reason })
       });
       if (res.ok) {
-        message.success('状态已更新');
+        message.success('状态已同步');
+        setBanModalVisible(false);
+        setBanReason('');
         fetchUsers();
       }
     } catch { message.error('操作失败'); }
@@ -90,7 +96,7 @@ export default function UsersPage() {
       render: (_: unknown, record: UserItem) => (
         <Space direction="vertical" size={0}>
           <Text strong>{record.username}</Text>
-          <Text type="secondary" style={{ fontSize: 12 }}>{record.email || 'no email'}</Text>
+          <Text type="secondary" style={{ fontSize: 11 }}>{record.email || 'no email'}</Text>
         </Space>
       )
     },
@@ -98,20 +104,23 @@ export default function UsersPage() {
       title: '状态', 
       dataIndex: 'status', 
       key: 'status',
-      render: (status: string) => (
-        <Tag color={status === 'BANNED' ? 'error' : 'success'}>
-          {status === 'BANNED' ? '已封禁' : '正常'}
-        </Tag>
+      render: (status: string, record: UserItem) => (
+        <Space direction="vertical" size={0}>
+          <Tag color={status === 'BANNED' ? 'error' : 'success'}>
+            {status === 'BANNED' ? '已封禁' : '正常'}
+          </Tag>
+          {status === 'BANNED' && record.banReason && (
+            <Text type="danger" style={{ fontSize: 10 }}>理由: {record.banReason}</Text>
+          )}
+        </Space>
       )
     },
-    ...(!mobile ? [{ title: '角色', dataIndex: 'role', key: 'role', render: (r: string) => <Tag color={r === 'ADMIN' ? 'gold' : 'blue'}>{r}</Tag> }] : []),
     {
       title: '操作',
       key: 'action',
       align: 'right' as const,
       render: (_: unknown, record: UserItem) => {
         const isAdmin = record.role === 'ADMIN';
-        const id = record.id || record._id || '';
         return (
           <Space size="small">
             <Button 
@@ -120,11 +129,18 @@ export default function UsersPage() {
               disabled={isAdmin}
               danger={record.status !== 'BANNED'}
               icon={record.status === 'BANNED' ? <CheckCircleOutlined /> : <StopOutlined />}
-              onClick={() => toggleStatus(record)}
+              onClick={() => {
+                if (record.status === 'BANNED') {
+                  handleToggleStatus(record);
+                } else {
+                  setCurrentBanningUser(record);
+                  setBanModalVisible(true);
+                }
+              }}
             >
               {!mobile && (record.status === 'BANNED' ? '解封' : '封禁')}
             </Button>
-            <Popconfirm title="确定彻底删除？" disabled={isAdmin} onConfirm={() => deleteUser(id)}>
+            <Popconfirm title="确定彻底删除？" disabled={isAdmin} onConfirm={() => deleteUser(record.id || record._id || '')}>
               <Button type="link" size="small" danger disabled={isAdmin} icon={<DeleteOutlined />}>
                 {!mobile && '删除'}
               </Button>
@@ -138,17 +154,18 @@ export default function UsersPage() {
   const expandedRowRender = (record: UserItem) => {
     const id = String(record.id || record._id);
     const stats = usageData[id];
-
-    if (usageLoading[id]) return <div style={{ padding: 16 }}><Spin size="small" /> 正在加载统计...</div>;
-    if (!stats) return <div style={{ padding: 16 }}><Button size="small" onClick={() => fetchUsage(record)}>点击加载用量</Button></div>;
+    if (usageLoading[id]) return <div style={{ padding: 16 }}><Spin size="small" /></div>;
+    if (!stats) return <div style={{ padding: 16 }}><Button size="small" onClick={() => fetchUsage(record)}>加载统计</Button></div>;
 
     return (
-      <Card size="small" title={<Space><AreaChartOutlined /> 详细用量统计</Space>} variant="borderless" style={{ background: '#f9f9f9', margin: '8px 0' }}>
-        <Descriptions column={mobile ? 1 : 3} size="small">
-          <Descriptions.Item label="转换文档次数">{stats.convertCount} 次</Descriptions.Item>
-          <Descriptions.Item label="上传图片数量">{stats.uploadCount} 张</Descriptions.Item>
-          <Descriptions.Item label="系统登录次数">{stats.loginCount} 次</Descriptions.Item>
+      <Card size="small" title={<Space><AreaChartOutlined /> 统计</Space>} variant="borderless" style={{ background: '#f9f9f9' }}>
+        <Descriptions column={mobile ? 1 : 2} size="small">
+          <Descriptions.Item label="文档转换">{stats.convertCount} 次</Descriptions.Item>
+          <Descriptions.Item label="登录次数">{stats.loginCount} 次</Descriptions.Item>
           <Descriptions.Item label="注册时间">{new Date(record.createdAt).toLocaleString()}</Descriptions.Item>
+          <Descriptions.Item label="头像链接">
+            <Text ellipsis style={{ maxWidth: 200 }}>{record.avatar || '未设置'}</Text>
+          </Descriptions.Item>
         </Descriptions>
       </Card>
     );
@@ -171,6 +188,23 @@ export default function UsersPage() {
           pagination={{ size: 'small', hideOnSinglePage: true }}
         />
       </Card>
+
+      <Modal
+        title="封禁用户"
+        open={banModalVisible}
+        onOk={() => handleToggleStatus(currentBanningUser!, banReason)}
+        onCancel={() => setBanModalVisible(false)}
+        okText="确认封禁"
+        okButtonProps={{ danger: true }}
+      >
+        <div style={{ marginBottom: 16 }}>正在封禁用户: <b>{currentBanningUser?.username}</b></div>
+        <TextArea 
+          placeholder="请输入封禁原因 (用户登录时可见)" 
+          rows={4} 
+          value={banReason}
+          onChange={(e) => setBanReason(e.target.value)}
+        />
+      </Modal>
     </div>
   );
 }

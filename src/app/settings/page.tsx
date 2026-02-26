@@ -19,6 +19,7 @@ interface AuthUser {
 export default function UserSettingsPage() {
   const [form] = Form.useForm();
   const [saving, setSaving] = useState(false);
+  const [currentAvatar, setCurrentAvatar] = useState('');
   const router = useRouter();
   const auth = getAuth();
 
@@ -32,6 +33,7 @@ export default function UserSettingsPage() {
       username: user.username,
       avatar: user.avatar || ''
     });
+    setCurrentAvatar(user.avatar || '');
   }, [auth, router, form]);
 
   const onFinish = async (values: { avatar: string }) => {
@@ -48,6 +50,8 @@ export default function UserSettingsPage() {
       const data = (await res.json()) as { success: boolean };
       if (data.success) {
         message.success('个人资料已更新');
+        setCurrentAvatar(values.avatar);
+        // 关键：实时同步本地持久化存储
         if (auth) {
           const newAuth = { ...auth, user: { ...auth.user, avatar: values.avatar } };
           localStorage.setItem('toolbox_auth_data', JSON.stringify(newAuth));
@@ -77,7 +81,7 @@ export default function UserSettingsPage() {
 
         <Card variant="borderless" style={{ borderRadius: 16, boxShadow: '0 4px 12px rgba(0,0,0,0.02)' }}>
           <div style={{ textAlign: 'center', marginBottom: 32 }}>
-            <Avatar size={80} icon={<UserOutlined />} src={user.avatar} style={{ backgroundColor: '#000' }} />
+            <Avatar size={80} icon={<UserOutlined />} src={currentAvatar} style={{ backgroundColor: '#000' }} />
             <div style={{ marginTop: 16 }}>
               <Title level={4} style={{ margin: 0 }}>{user.username}</Title>
               <Tag color={user.role === 'ADMIN' ? 'gold' : 'blue'}>{user.role}</Tag>
@@ -88,7 +92,7 @@ export default function UserSettingsPage() {
             <Form.Item label="用户名" name="username">
               <Input disabled />
             </Form.Item>
-            <Form.Item label="头像 URL" name="avatar" tooltip="支持图片直链地址">
+            <Form.Item label="头像链接" name="avatar" tooltip="支持图片直链地址">
               <Input placeholder="https://example.com/avatar.png" />
             </Form.Item>
             <Form.Item style={{ marginBottom: 0 }}>
