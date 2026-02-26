@@ -26,7 +26,7 @@ export default function RegisterPage() {
         notification.success({
           message: '注册成功',
           description: data.message || '账号已创建，请前往登录',
-        });
+        } as any);
         router.push('/auth/login');
       } else {
         throw new Error(data.message || '注册失败');
