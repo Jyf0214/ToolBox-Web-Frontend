@@ -2,8 +2,9 @@
 
 import React, { useEffect, useState } from 'react';
 import { Layout, Typography, Form, Input, InputNumber, Switch, Button, Card, message, Breadcrumb, Space } from 'antd';
-import { MailOutlined, SaveOutlined, ArrowLeft, ThunderboltOutlined } from '@ant-design/icons';
+import { MailOutlined, SaveOutlined, ArrowLeftOutlined, ThunderboltOutlined } from '@ant-design/icons';
 import Link from 'next/link';
+import { useResponsive } from 'antd-style';
 
 const { Content } = Layout;
 const { Title, Text } = Typography;
@@ -13,6 +14,7 @@ export default function SettingsPage() {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
+  const { mobile } = useResponsive();
 
   useEffect(() => {
     fetchData();
@@ -87,7 +89,7 @@ export default function SettingsPage() {
         </div>
 
         <div style={{ marginBottom: 32, display: 'flex', alignItems: 'center', gap: 16 }}>
-          <Link href="/"><Button icon={<ArrowLeft style={{ fontSize: 16 }} />} type="text" /></Link>
+          <Link href="/"><Button icon={<ArrowLeftOutlined style={{ fontSize: 16 }} />} type="text" /></Link>
           <div>
             <Title level={2} style={{ margin: 0, fontWeight: 800 }}>系统设置</Title>
             <Text type="secondary">管理后端 SMTP 邮件服务配置</Text>

@@ -1,8 +1,8 @@
 'use client';
 
 import React from 'react';
-import { ConfigProvider, Layout, Typography, Grid, Card, Space } from 'antd';
-import { FileText, Github, ChevronRight, FileDown } from 'lucide-react';
+import { ConfigProvider, Layout, Typography, Grid, Card, Space, Button } from 'antd';
+import { FileText, Github, ChevronRight, FileDown, User, Settings } from 'lucide-react';
 import Link from 'next/link';
 
 const { Header, Content, Footer } = Layout;
@@ -39,6 +39,11 @@ export default function Home() {
           borderRadius: 8,
           fontFamily: "'Inter', -apple-system, sans-serif",
         },
+        components: {
+          Button: {
+            textHoverBg: 'rgba(0, 0, 0, 0.04)',
+          }
+        }
       }}
     >
       <Layout style={{ minHeight: '100vh', background: '#fff' }}>
@@ -48,7 +53,10 @@ export default function Home() {
           padding: isMobile ? '0 16px' : '0 40px',
           display: 'flex', 
           alignItems: 'center', 
-          justifyContent: 'space-between' 
+          justifyContent: 'space-between',
+          position: 'sticky',
+          top: 0,
+          zIndex: 100
         }}>
           <Space>
             <div style={{ width: 32, height: 32, background: '#000', borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff' }}>
@@ -56,9 +64,28 @@ export default function Home() {
             </div>
             <Title level={5} style={{ margin: 0, fontWeight: 700 }}>ToolBox</Title>
           </Space>
-          <a href="https://github.com/Jyf0214/ToolBox-Web" target="_blank" style={{ color: '#666' }}>
-            <Github size={20} />
-          </a>
+          
+          <Space size={isMobile ? 8 : 16}>
+            <Link href="/admin/settings">
+              <Button type="text" icon={<Settings size={18} />} />
+            </Link>
+            
+            <Link href="/auth/login">
+              <Button type="default" icon={<User size={16} />} style={{ borderRadius: 6 }}>
+                登录
+              </Button>
+            </Link>
+
+            {!isMobile && (
+              <Button 
+                type="text" 
+                icon={<Github size={18} />} 
+                href="https://github.com/Jyf0214/ToolBox-Web" 
+                target="_blank"
+                style={{ color: '#666' }}
+              />
+            )}
+          </Space>
         </Header>
 
         <Content style={{ padding: isMobile ? '40px 16px' : '80px 40px' }}>
@@ -81,12 +108,12 @@ export default function Home() {
                 <Link href={tool.path} key={tool.path} style={{ textDecoration: 'none' }}>
                   <Card 
                     hoverable 
-                    style={{ borderRadius: 12, border: '1px solid #f0f0f0' }}
+                    style={{ borderRadius: 12, border: '1px solid #f0f0f0', transition: 'all 0.3s' }}
                     styles={{ body: { padding: 24 } }}
                   >
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                       <div style={{ color: tool.color, marginBottom: 16 }}>{tool.icon}</div>
-                      <ChevronRight size={18} style={{ color: '#ccc' }} />
+                      <ChevronRight size={18} style={{ color: '#e0e0e0' }} />
                     </div>
                     <Title level={4} style={{ margin: '0 0 8px 0' }}>{tool.title}</Title>
                     <Text type="secondary">{tool.desc}</Text>
@@ -97,7 +124,7 @@ export default function Home() {
           </div>
         </Content>
 
-        <Footer style={{ textAlign: 'center', color: '#999', padding: '48px 0' }}>
+        <Footer style={{ textAlign: 'center', color: '#999', padding: '48px 0', background: '#fff' }}>
           ToolBox-Web © 2026
         </Footer>
       </Layout>
