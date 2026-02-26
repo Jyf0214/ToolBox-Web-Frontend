@@ -3,8 +3,9 @@
 import React, { useEffect, useState } from 'react';
 import { Table, Tag, Space, Button, message, Popconfirm, Card, Typography } from 'antd';
 import { getAuthHeader } from '@/lib/auth';
+import { useResponsive } from 'antd-style';
 
-const { Title } = Typography;
+const { Title, Text } = Typography;
 
 interface UserItem {
   id?: string | number;
@@ -18,6 +19,7 @@ interface UserItem {
 export default function UsersPage() {
   const [users, setUsers] = useState<UserItem[]>([]);
   const [loading, setLoading] = useState(false);
+  const { mobile } = useResponsive();
 
   const fetchUsers = async () => {
     setLoading(true);
@@ -68,35 +70,46 @@ export default function UsersPage() {
   };
 
   const columns = [
-    { title: '用户名', dataIndex: 'username', key: 'username' },
-    { title: '邮箱', dataIndex: 'email', key: 'email', render: (t: string) => t || '-' },
+    { 
+      title: '用户', 
+      key: 'user',
+      render: (_: unknown, record: UserItem) => (
+        <Space direction="vertical" size={0}>
+          <Text strong>{record.username}</Text>
+          {mobile && <Text type="secondary" style={{ fontSize: 12 }}>{record.email || '无邮箱'}</Text>}
+        </Space>
+      )
+    },
+    ...(!mobile ? [{ title: '邮箱', dataIndex: 'email', key: 'email', render: (t: string) => t || '-' }] : []),
     { 
       title: '角色', 
       dataIndex: 'role', 
       key: 'role',
       render: (role: string) => (
-        <Tag color={role === 'ADMIN' ? 'red' : 'blue'}>{role}</Tag>
+        <Tag color={role === 'ADMIN' ? 'red' : 'blue'} style={{ borderRadius: 4 }}>{role}</Tag>
       )
     },
-    { 
+    ...(!mobile ? [{ 
       title: '创建时间', 
       dataIndex: 'createdAt', 
       key: 'createdAt',
       render: (t: string) => new Date(t).toLocaleString() 
-    },
+    }] : []),
     {
       title: '操作',
       key: 'action',
+      align: 'right' as const,
       render: (_: unknown, record: UserItem) => (
-        <Space size="middle">
+        <Space size="small">
           <Button 
             type="link" 
+            size="small"
             onClick={() => updateRole(record.id || record._id || '', record.role === 'ADMIN' ? 'USER' : 'ADMIN')}
           >
-            切换为{record.role === 'ADMIN' ? '用户' : '管理员'}
+            {mobile ? '权' : (record.role === 'ADMIN' ? '降级' : '升级')}
           </Button>
-          <Popconfirm title="确定删除吗？" onConfirm={() => deleteUser(record.id || record._id || '')}>
-            <Button type="link" danger>删除</Button>
+          <Popconfirm title="确定删除？" onConfirm={() => deleteUser(record.id || record._id || '')}>
+            <Button type="link" size="small" danger>删</Button>
           </Popconfirm>
         </Space>
       ),
@@ -105,9 +118,17 @@ export default function UsersPage() {
 
   return (
     <div>
-      <Title level={3} style={{ marginBottom: 24 }}>用户管理</Title>
-      <Card variant="borderless" style={{ borderRadius: 12 }}>
-        <Table columns={columns} dataSource={users} rowKey={(r: UserItem) => String(r.id || r._id)} loading={loading} />
+      <Title level={mobile ? 4 : 3} style={{ marginBottom: mobile ? 16 : 24 }}>用户管理</Title>
+      <Card variant="borderless" style={{ borderRadius: 12 }} styles={{ body: { padding: mobile ? 0 : 24 } }}>
+        <Table 
+          columns={columns} 
+          dataSource={users} 
+          rowKey={(r: UserItem) => String(r.id || r._id)} 
+          loading={loading} 
+          size={mobile ? 'small' : 'middle'}
+          scroll={mobile ? { x: 400 } : undefined}
+          pagination={{ size: 'small' }}
+        />
       </Card>
     </div>
   );
