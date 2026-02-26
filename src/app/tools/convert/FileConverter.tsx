@@ -245,7 +245,16 @@ export const FileConverter: React.FC = () => {
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
             <Badge count={fileList.length} color="#000" offset={[10, 0]}><Text strong>处理列表</Text></Badge>
             <Space>
-              <Button type="primary" icon={<PlayCircleOutlined />} onClick={startAll} loading={isProcessing} disabled={fileList.every(f => f.status !== 'wait')} style={{ background: '#000' }}>启动</Button>
+              {!isProcessing && !fileList.every(f => f.status !== 'wait') && (
+                <Button 
+                  type="primary" 
+                  icon={<PlayCircleOutlined />} 
+                  onClick={startAll} 
+                  style={{ background: '#000' }}
+                >
+                  启动
+                </Button>
+              )}
               {fileList.some(f => f.status === 'completed') && (
                 <Button icon={<DownloadOutlined />} onClick={() => {
                   fileList.filter(f => f.status === 'completed').forEach((item, index) => setTimeout(() => downloadFile(item), index * 800));
