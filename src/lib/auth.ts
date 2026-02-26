@@ -33,7 +33,7 @@ export const logout = () => {
   }
 };
 
-export const getAuthHeader = () => {
+export const getAuthHeader = (): Record<string, string> => {
   const auth = getAuth();
   return auth ? { 'Authorization': `Bearer ${auth.token}` } : {};
 };
