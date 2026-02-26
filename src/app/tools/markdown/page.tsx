@@ -1,10 +1,11 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Layout, Typography, Button, Input, Card, message, Breadcrumb, notification } from 'antd';
-import { ArrowLeft, FileDown, Loader2 } from 'lucide-react';
+import { Layout, Typography, Button, Input, Card, message, Breadcrumb, notification, Segmented, Space } from 'antd';
+import { ArrowLeft, FileDown, Loader2, FileText, Image as ImageIcon, FileType } from 'lucide-react';
 import Link from 'next/link';
 import { useResponsive } from 'antd-style';
+import { getAuthHeader } from '@/lib/auth';
 
 const { Content } = Layout;
 const { Title, Text } = Typography;
@@ -13,43 +14,28 @@ const { TextArea } = Input;
 const PROXY_PATH = '/api/proxy';
 const DIRECT_API_URL = process.env.NEXT_PUBLIC_DIRECT_API_URL || PROXY_PATH;
 
+type ExportFormat = 'pdf' | 'docx' | 'png';
+
 export default function MarkdownPage() {
   const [content, setContent] = useState('');
   const [loading, setLoading] = useState(false);
+  const [format, setFormat] = useState<ExportFormat>('pdf');
   const { mobile } = useResponsive();
 
-  const showErrorLog = (msg: string, error: unknown, details?: string) => {
-    const errorMsg = error instanceof Error ? error.message : String(error);
-    const truncatedDetails = details && details.length > 5000 
-      ? details.substring(0, 5000) + '\n... [日志过长已截断]' 
-      : details;
+  const formatOptions = [
+    { label: <Space><FileType size={14}/>PDF</Space>, value: 'pdf' },
+    { label: <Space><FileText size={14}/>DOCX</Space>, value: 'docx' },
+    { label: <Space><ImageIcon size={14}/>PNG</Space>, value: 'png' },
+  ];
 
+  const showErrorLog = (msg: string, error: unknown) => {
+    const errorMsg = error instanceof Error ? error.message : String(error);
     notification.error({
       message: msg,
       title: msg,
-      description: (
-        <div style={{ maxHeight: 200, overflowY: 'auto', overflowX: 'hidden' }}>
-          <div style={{ marginBottom: 4 }}>
-            <Text type="secondary" style={{ fontSize: 11 }}>原因:</Text>
-            <div style={{ fontSize: 12, color: '#ff4d4f', marginTop: 2 }}>{errorMsg}</div>
-          </div>
-          {truncatedDetails && (
-            <div style={{ marginTop: 8 }}>
-              <Text type="secondary" style={{ fontSize: 11 }}>反馈 (RAW):</Text>
-              <pre style={{ 
-                fontSize: 10, background: '#fafafa', padding: '6px 8px', marginTop: 4, 
-                whiteSpace: 'pre-wrap', wordBreak: 'break-all', borderRadius: 4,
-                color: '#888', border: '1px solid #f0f0f0', fontFamily: 'monospace'
-              }}>
-                {truncatedDetails}
-              </pre>
-            </div>
-          )}
-        </div>
-      ),
-      duration: 10,
+      description: errorMsg,
+      duration: 5,
       placement: 'topRight',
-      style: { width: mobile ? '90vw' : 400, padding: '12px 16px' }
     });
   };
 
@@ -63,8 +49,15 @@ export default function MarkdownPage() {
     try {
       const res = await fetch(`${PROXY_PATH}/convert/md-to-pdf`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content, title: 'markdown_export' })
+        headers: { 
+          'Content-Type': 'application/json',
+          ...getAuthHeader()
+        },
+        body: JSON.stringify({ 
+          content, 
+          title: 'markdown_export',
+          format 
+        })
       });
       
       if (!res.ok) {
@@ -77,8 +70,10 @@ export default function MarkdownPage() {
 
       const poll = async () => {
         try {
-          const statusRes = await fetch(`${PROXY_PATH}/convert/md/status/${jobId}`);
-          const data = (await statusRes.json()) as { status: string; token: string; error?: string };
+          const statusRes = await fetch(`${PROXY_PATH}/convert/md/status/${jobId}`, {
+            headers: getAuthHeader()
+          });
+          const data = (await statusRes.json()) as { status: string; token: string; error?: string; outputSize?: number };
 
           if (data.status === 'completed') {
             window.open(`${DIRECT_API_URL}/convert/md/download/${jobId}?token=${data.token}`, '_blank');
@@ -108,28 +103,38 @@ export default function MarkdownPage() {
         <div style={{ marginBottom: 24 }}>
           <Breadcrumb items={[
             { title: <Link href="/">首页</Link> },
-            { title: 'Markdown 转 PDF' }
+            { title: 'Markdown 转换' }
           ]} />
         </div>
 
-        <div style={{ marginBottom: 32, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div style={{ marginBottom: 32, display: 'flex', flexDirection: mobile ? 'column' : 'row', justifyContent: 'space-between', alignItems: mobile ? 'flex-start' : 'center', gap: 16 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
             <Link href="/"><Button icon={<ArrowLeft size={16} />} type="text" /></Link>
             <div>
-              <Title level={2} style={{ margin: 0 }}>Markdown 转 PDF</Title>
-              <Text type="secondary">标准的 A4 纸张排版，支持 HTML 标签</Text>
+              <Title level={2} style={{ margin: 0 }}>Markdown 转换</Title>
+              <Text type="secondary">导出为高质量 PDF、DOCX 或 PNG 图片</Text>
             </div>
           </div>
-          <Button 
-            type="primary" 
-            icon={loading ? <Loader2 className="animate-spin" size={16} /> : <FileDown size={16} />} 
-            disabled={loading}
-            onClick={handleConvert}
-            size="large"
-            style={{ background: '#000', borderColor: '#000' }}
-          >
-            {loading ? '正在生成 A4 PDF...' : '导出 A4 PDF'}
-          </Button>
+          
+          <Space direction={mobile ? 'vertical' : 'horizontal'} style={{ width: mobile ? '100%' : 'auto' }}>
+            <Segmented
+              options={formatOptions}
+              value={format}
+              onChange={(value) => setFormat(value as ExportFormat)}
+              disabled={loading}
+            />
+            <Button 
+              type="primary" 
+              icon={loading ? <Loader2 className="animate-spin" size={16} /> : <FileDown size={16} />} 
+              disabled={loading}
+              onClick={handleConvert}
+              size="large"
+              block={mobile}
+              style={{ background: '#000', borderColor: '#000' }}
+            >
+              {loading ? `正在生成 ${format.toUpperCase()}...` : `导出 ${format.toUpperCase()}`}
+            </Button>
+          </Space>
         </div>
 
         <Card variant="borderless" style={{ borderRadius: 12, boxShadow: '0 4px 12px rgba(0,0,0,0.02)' }}>
