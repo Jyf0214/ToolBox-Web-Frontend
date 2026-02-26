@@ -3,13 +3,19 @@
 import React, { useEffect, useState } from 'react';
 import { ConfigProvider, Layout, Typography, Grid, Card, Space, Button, Dropdown, Avatar } from 'antd';
 import type { MenuProps } from 'antd';
-import { FileText, Github, ChevronRight, FileDown, User, Settings, LogOut } from 'lucide-react';
+import { FileText, Github, ChevronRight, FileDown, User, Settings, LogOut, LayoutDashboard } from 'lucide-react';
 import Link from 'next/link';
 import { getAuth, logout, AuthData } from '@/lib/auth';
 
 const { Header, Content, Footer } = Layout;
 const { Title, Text } = Typography;
 const { useBreakpoint } = Grid;
+
+interface AuthUser {
+  username: string;
+  role: 'USER' | 'ADMIN';
+  avatar?: string;
+}
 
 export default function Home() {
   const screens = useBreakpoint();
@@ -43,12 +49,15 @@ export default function Home() {
   const userMenuItems: MenuProps['items'] = [
     {
       key: 'settings',
-      label: <Link href="/admin/settings">设置</Link>,
+      label: <Link href="/settings">账户设置</Link>,
       icon: <Settings size={14} />,
     },
-    {
-      type: 'divider',
-    },
+    ...(auth?.user.role === 'ADMIN' ? [{
+      key: 'admin',
+      label: <Link href="/admin/users">管理后台</Link>,
+      icon: <LayoutDashboard size={14} />,
+    }] : []),
+    { type: 'divider' },
     {
       key: 'logout',
       label: '退出登录',
@@ -92,16 +101,14 @@ export default function Home() {
               <Dropdown menu={{ items: userMenuItems }} placement="bottomRight">
                 <Button type="text" style={{ height: 40, padding: '0 8px' }}>
                   <Space>
-                    <Avatar size="small" style={{ backgroundColor: '#000' }} icon={<User size={14} />} />
+                    <Avatar size="small" style={{ backgroundColor: '#000' }} icon={<User size={14} />} src={(auth.user as AuthUser).avatar} />
                     {!isMobile && <Text strong>{auth.user.username}</Text>}
                   </Space>
                 </Button>
               </Dropdown>
             ) : (
               <Link href="/auth/login">
-                <Button type="default" icon={<User size={16} />} style={{ borderRadius: 6 }}>
-                  登录
-                </Button>
+                <Button type="default" icon={<User size={16} />} style={{ borderRadius: 6 }}>登录</Button>
               </Link>
             )}
 
