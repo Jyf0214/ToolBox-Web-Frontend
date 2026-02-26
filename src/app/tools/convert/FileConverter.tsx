@@ -1,216 +1,33 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Upload, Button, Card, message, Typography, Space, Progress, List, Switch, Badge, notification, Alert } from 'antd';
-import { InboxOutlined, FileTextOutlined, DownloadOutlined, PlayCircleOutlined, DeleteOutlined, FileAddOutlined, FileZipOutlined, CopyOutlined, InfoCircleOutlined } from '@ant-design/icons';
-import { useResponsive } from 'antd-style';
+import { Upload, Button, List, Card, Space, Typography, message, Tag, Tooltip } from 'antd';
+import { InboxOutlined, FilePdfOutlined, DownloadOutlined, PlayCircleOutlined, DeleteOutlined, CopyOutlined, CheckCircleOutlined, SyncOutlined } from '@ant-design/icons';
 import { v4 as uuidv4 } from 'uuid';
 
+const { Dragger } = Upload;
 const { Title, Text } = Typography;
 
-const PROXY_PATH = '/api/proxy';
-const DIRECT_API_URL = process.env.NEXT_PUBLIC_DIRECT_API_URL || PROXY_PATH;
-
-interface FileItem {
+// 解决 AntD UploadFile 类型冲突，直接定义业务需要的结构
+interface ExtendedFile {
   uid: string;
   name: string;
-  file: File;
-  status: 'wait' | 'uploading' | 'processing' | 'completed' | 'failed';
-  progress: number;
+  size: number;
+  originFileObj?: File;
   jobId?: string;
-  token?: string;
-  error?: string;
-  isZip: boolean;
-  subProgress?: {
-    total: number;
-    current: number;
-    message: string;
-  };
+  status: 'wait' | 'uploading' | 'processing' | 'completed' | 'error';
+  progress?: number;
+  downloadToken?: string;
+  outputFileName?: string;
 }
 
-export const FileConverter: React.FC = () => {
-  const [fileList, setFileList] = useState<FileItem[]>([]);
+const CHUNK_SIZE = 4 * 1024 * 1024; // 4MB
+
+export default function FileConverter() {
+  const [fileList, setFileList] = useState<ExtendedFile[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [makeEven, setMakeEven] = useState(false);
-  const { mobile } = useResponsive();
 
-  const showErrorLog = (msg: string, error: unknown, details?: string) => {
-    const errorMsg = error instanceof Error ? error.message : String(error);
-    const truncatedDetails = details && details.length > 5000 
-      ? details.substring(0, 5000) + '\n... [日志过长已截断]' 
-      : details;
-
-    notification.error({
-      message: msg,
-      title: msg, // 核心修复：添加 title
-      description: (
-        <div style={{ maxHeight: 200, overflowY: 'auto', overflowX: 'hidden' }}>
-          <div style={{ marginBottom: 4 }}>
-            <Text type="secondary" style={{ fontSize: 11 }}>原因:</Text>
-            <div style={{ fontSize: 12, color: '#ff4d4f', marginTop: 2 }}>{errorMsg}</div>
-          </div>
-          {truncatedDetails && (
-            <div style={{ marginTop: 8 }}>
-              <Text type="secondary" style={{ fontSize: 11 }}>反馈 (RAW):</Text>
-              <pre style={{ 
-                fontSize: 10, background: '#fafafa', padding: '6px 8px', marginTop: 4, 
-                whiteSpace: 'pre-wrap', wordBreak: 'break-all', borderRadius: 4,
-                color: '#888', border: '1px solid #f0f0f0', fontFamily: 'monospace'
-              }}>
-                {truncatedDetails}
-              </pre>
-            </div>
-          )}
-        </div>
-      ),
-      duration: 10,
-      placement: 'topRight',
-      style: { width: mobile ? '90vw' : 400, padding: '12px 16px' }
-    });
-  };
-
-  const handleBeforeUpload = (file: File) => {
-    const isDocx = file.name.endsWith('.docx');
-    const isZip = file.name.endsWith('.zip');
-    if (!isDocx && !isZip) {
-      message.error(`${file.name} 格式不支持`);
-      return false;
-    }
-    const newItem: FileItem = {
-      uid: Math.random().toString(36).substring(7),
-      name: file.name,
-      file,
-      status: 'wait',
-      progress: 0,
-      isZip,
-    };
-    setFileList(prev => [...prev, newItem]);
-    return false;
-  };
-
-  const uploadFile = async (item: FileItem) => {
-    const CHUNK_SIZE = 4 * 1024 * 1024;
-    const totalChunks = Math.ceil(item.file.size / CHUNK_SIZE);
-    const uploadId = uuidv4();
-    const MAX_CONCURRENCY = 3;
-    const MAX_RETRIES = 3;
-
-    let completedChunks = 0;
-    const chunkIndices = Array.from({ length: totalChunks }, (_, i) => i);
-
-    const uploadChunkWithRetry = async (index: number, retryCount = 0): Promise<{ merged?: boolean }> => {
-      const start = index * CHUNK_SIZE;
-      const end = Math.min(item.file.size, start + CHUNK_SIZE);
-      const chunk = item.file.slice(start, end);
-
-      const formData = new FormData();
-      formData.append('file', chunk);
-      formData.append('uploadId', uploadId);
-      formData.append('index', index.toString());
-      formData.append('total', totalChunks.toString());
-      formData.append('fileName', item.name);
-      formData.append('makeEven', String(makeEven));
-
-      try {
-        const res = await new Promise<{ merged?: boolean }>((resolve, reject) => {
-          const xhr = new XMLHttpRequest();
-          xhr.timeout = 60000;
-          xhr.onload = () => xhr.status >= 200 && xhr.status < 300 ? resolve(JSON.parse(xhr.responseText)) : reject(`HTTP ${xhr.status}`);
-          xhr.onerror = () => reject('网络异常');
-          xhr.ontimeout = () => reject('请求超时');
-          xhr.open('POST', `${PROXY_PATH}/convert/upload-chunk`);
-          xhr.send(formData);
-        });
-
-        completedChunks++;
-        updateFileStatus(item.uid, { progress: Math.floor((completedChunks / totalChunks) * 90), status: 'uploading' });
-        return res;
-      } catch (err) {
-        if (retryCount < MAX_RETRIES) return uploadChunkWithRetry(index, retryCount + 1);
-        throw err;
-      }
-    };
-
-    const pool = new Set<Promise<{ merged?: boolean }>>();
-    for (const index of chunkIndices) {
-      if (pool.size >= MAX_CONCURRENCY) await Promise.race(pool);
-      const task = uploadChunkWithRetry(index);
-      pool.add(task);
-      task.then(() => pool.delete(task)).catch(() => pool.delete(task));
-    }
-
-    try {
-      const results = await Promise.all(pool);
-      const lastRes = results.find(r => r && r.merged);
-      if (lastRes) {
-        updateFileStatus(item.uid, { jobId: uploadId, status: 'processing', progress: 95 });
-        await pollStatus(item.uid, uploadId);
-      }
-    } catch (err: unknown) {
-      updateFileStatus(item.uid, { status: 'failed', error: '上传失败' });
-      showErrorLog(`传输中断: ${item.name}`, err);
-    }
-  };
-
-  const pollStatus = async (uid: string, jobId: string) => {
-    const check = async (): Promise<void> => {
-      try {
-        const res = await fetch(`${PROXY_PATH}/convert/status/${jobId}`);
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = (await res.json()) as { 
-          status: string; 
-          downloadToken?: string; 
-          jobId: string; 
-          error?: string; 
-          progress?: { total: number; current: number; message: string };
-        };
-
-        if (data.status === 'completed') {
-          updateFileStatus(uid, { status: 'completed', progress: 100, token: data.downloadToken, jobId: data.jobId });
-        } else if (data.status === 'failed') {
-          updateFileStatus(uid, { status: 'failed', error: '转换失败' });
-          showErrorLog('转换任务异常', data.error);
-        } else {
-          if (data.progress) updateFileStatus(uid, { subProgress: data.progress });
-          setTimeout(check, 1500);
-        }
-      } catch (err: unknown) {
-        updateFileStatus(uid, { status: 'failed', error: '查询中断' });
-        showErrorLog('状态轮询失败', err);
-      }
-    };
-    return check();
-  };
-
-  const updateFileStatus = (uid: string, updates: Partial<FileItem>) => {
-    setFileList(prev => prev.map(f => f.uid === uid ? { ...f, ...updates } : f));
-  };
-
-  const startAll = async () => {
-    setIsProcessing(true);
-    const pending = fileList.filter(f => f.status === 'wait');
-    for (const item of pending) {
-      await uploadFile(item);
-    }
-    setIsProcessing(false);
-  };
-
-  const downloadFile = (item: FileItem) => {
-    if (item.token && item.jobId) {
-      const url = `${DIRECT_API_URL}/convert/download/${item.jobId}?token=${item.token}`;
-      window.open(url, '_blank');
-    }
-  };
-
-  const copyDownloadUrl = (item: FileItem) => {
-    if (item.token && item.jobId) {
-      const baseUrl = DIRECT_API_URL.startsWith('http') ? DIRECT_API_URL : window.location.origin + DIRECT_API_URL;
-      const fullUrl = `${baseUrl}/convert/download/${item.jobId}?token=${item.token}`;
-      navigator.clipboard.writeText(fullUrl).then(() => message.success('链接已复制')).catch(() => message.error('复制失败'));
-    }
-  };
-
-  const formatSizeLabel = (bytes: number) => {
+  const formatSize = (bytes: number = 0) => {
     if (bytes === 0) return '0 B';
     const k = 1024;
     const sizes = ['B', 'KB', 'MB', 'GB'];
@@ -218,44 +35,141 @@ export const FileConverter: React.FC = () => {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
 
+  const uploadChunk = async (file: File, uploadId: string, index: number, total: number) => {
+    const start = index * CHUNK_SIZE;
+    const end = Math.min(start + CHUNK_SIZE, file.size);
+    const chunk = file.slice(start, end);
+
+    const formData = new FormData();
+    formData.append('file', chunk);
+    formData.append('uploadId', uploadId);
+    formData.append('index', index.toString());
+    formData.append('total', total.toString());
+    formData.append('fileName', file.name);
+
+    const res = await fetch('/api/proxy/convert/upload-chunk', {
+      method: 'POST',
+      body: formData,
+    });
+    return res.json();
+  };
+
+  const startAll = async () => {
+    const waiting = fileList.filter(f => f.status === 'wait');
+    if (waiting.length === 0) return;
+
+    setIsProcessing(true);
+    
+    for (const fileItem of waiting) {
+      const uploadId = uuidv4();
+      const file = fileItem.originFileObj as File;
+      const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+
+      updateFileStatus(fileItem.uid, { status: 'uploading', progress: 0, jobId: uploadId });
+
+      try {
+        for (let i = 0; i < totalChunks; i++) {
+          await uploadChunk(file, uploadId, i, totalChunks);
+          const progress = Math.round(((i + 1) / totalChunks) * 100);
+          updateFileStatus(fileItem.uid, { progress });
+        }
+        updateFileStatus(fileItem.uid, { status: 'processing' });
+        pollStatus(fileItem.uid, uploadId);
+      } catch {
+        updateFileStatus(fileItem.uid, { status: 'error' });
+      }
+    }
+  };
+
+  const updateFileStatus = (uid: string, updates: Partial<ExtendedFile>) => {
+    setFileList(prev => prev.map(f => f.uid === uid ? { ...f, ...updates } : f));
+  };
+
+  const pollStatus = async (uid: string, jobId: string) => {
+    const timer = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/proxy/convert/status/${jobId}`);
+        const data = await res.json();
+
+        if (data.status === 'completed') {
+          clearInterval(timer);
+          updateFileStatus(uid, { 
+            status: 'completed', 
+            downloadToken: data.downloadToken, 
+            outputFileName: data.outputFileName,
+            size: data.outputSize
+          });
+          checkProcessingDone();
+        } else if (data.status === 'failed') {
+          clearInterval(timer);
+          updateFileStatus(uid, { status: 'error' });
+          checkProcessingDone();
+        }
+      } catch {
+        clearInterval(timer);
+        updateFileStatus(uid, { status: 'error' });
+        checkProcessingDone();
+      }
+    }, 2000);
+  };
+
+  const checkProcessingDone = () => {
+    setFileList(prev => {
+      const stillWorking = prev.some(f => f.status === 'uploading' || f.status === 'processing');
+      if (!stillWorking) setIsProcessing(false);
+      return prev;
+    });
+  };
+
+  const downloadFile = (file: ExtendedFile) => {
+    if (!file.jobId || !file.downloadToken) return;
+    const url = `/api/proxy/convert/download/${file.jobId}?token=${file.downloadToken}`;
+    window.open(url, '_blank');
+  };
+
+  const copyLink = (file: ExtendedFile) => {
+    const directApi = process.env.NEXT_PUBLIC_DIRECT_API_URL || window.location.origin + '/api/proxy';
+    const link = `${directApi}/convert/download/${file.jobId}?token=${file.downloadToken}`;
+    navigator.clipboard.writeText(link).then(() => message.success('下载直链已复制'));
+  };
+
   return (
-    <Card variant="borderless" style={{ borderRadius: 16, border: '1px solid #f0f0f0' }}>
-      <div style={{ marginBottom: 20, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <Space><FileAddOutlined /><Text>开启奇数页补全</Text></Space>
-        <Switch checked={makeEven} onChange={setMakeEven} disabled={isProcessing} size="small" />
-      </div>
-
-      <Alert
-        message="下载建议"
-        description="对于超过 4MB 的文件，推荐复制直链使用 IDM/ADM 等多线程工具下载，以避免 Chrome 等浏览器单线程下载可能出现的中断。"
-        type="info"
-        showIcon
-        icon={<InfoCircleOutlined />}
-        style={{ marginBottom: 20, borderRadius: 8, fontSize: 13 }}
-      />
-
-      <Upload.Dragger multiple accept=".docx,.zip" beforeUpload={handleBeforeUpload} showUploadList={false} disabled={isProcessing} style={{ padding: 20, background: '#fafafa', borderRadius: 12 }}>
+    <Card variant="borderless" style={{ borderRadius: 16, boxShadow: '0 4px 24px rgba(0,0,0,0.04)' }}>
+      <Dragger
+        multiple
+        showUploadList={false}
+        beforeUpload={(file) => {
+          const isDocx = file.name.toLowerCase().endsWith('.docx');
+          const isZip = file.name.toLowerCase().endsWith('.zip');
+          if (!isDocx && !isZip) {
+            message.error('仅支持 DOCX 或 ZIP 格式');
+            return Upload.LIST_IGNORE;
+          }
+          const newFile: ExtendedFile = {
+            uid: uuidv4(),
+            name: file.name,
+            size: file.size,
+            status: 'wait',
+            originFileObj: file
+          };
+          setFileList(prev => [...prev, newFile]);
+          return false;
+        }}
+      >
         <p className="ant-upload-drag-icon"><InboxOutlined style={{ color: '#000' }} /></p>
-        <Title level={5}>上传 DOCX 或 ZIP</Title>
-        <Text type="secondary">支持保留压缩包目录结构进行转换</Text>
-      </Upload.Dragger>
+        <p className="ant-upload-text">点击或拖拽文件到此处</p>
+        <p className="ant-upload-hint">支持 .docx 或包含 .docx 的 .zip 压缩包</p>
+      </Dragger>
 
       {fileList.length > 0 && (
         <div style={{ marginTop: 24 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
-            <Badge count={fileList.length} color="#000" offset={[10, 0]}><Text strong>处理列表</Text></Badge>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16, alignItems: 'center' }}>
+            <Title level={5} style={{ margin: 0 }}>待处理文件 ({fileList.length})</Title>
             <Space>
               {!isProcessing && !fileList.every(f => f.status !== 'wait') && (
-                <Button 
-                  type="primary" 
-                  icon={<PlayCircleOutlined />} 
-                  onClick={startAll} 
-                  style={{ background: '#000' }}
-                >
-                  启动
-                </Button>
+                <Button type="primary" icon={<PlayCircleOutlined />} onClick={startAll} style={{ background: '#000' }}>启动</Button>
               )}
-              {fileList.some(f => f.status === 'completed') && (
+              {fileList.length > 1 && fileList.some(f => f.status === 'completed') && (
                 <Button icon={<DownloadOutlined />} onClick={() => {
                   fileList.filter(f => f.status === 'completed').forEach((item, index) => setTimeout(() => downloadFile(item), index * 800));
                 }}>一键下载</Button>
@@ -263,25 +177,41 @@ export const FileConverter: React.FC = () => {
               <Button type="text" danger onClick={() => setFileList([])} disabled={isProcessing}>清空</Button>
             </Space>
           </div>
-          <List dataSource={fileList} renderItem={(item) => (
-            <List.Item actions={[
-              item.status === 'completed' && <Space key="actions"><Button type="link" icon={<DownloadOutlined />} onClick={() => downloadFile(item)}>下载</Button><Button type="text" icon={<CopyOutlined />} onClick={() => copyDownloadUrl(item)} title="复制下载链接" /></Space>,
-              item.status === 'wait' && <Button key="rm" type="text" danger icon={<DeleteOutlined />} onClick={() => setFileList(prev => prev.filter(f => f.uid !== item.uid))} />
-            ]}>
-              <List.Item.Meta
-                avatar={item.isZip ? <FileZipOutlined style={{ fontSize: 20, color: '#faad14' }} /> : <FileTextOutlined style={{ fontSize: 20, color: '#1890ff' }} />}
-                title={<Space><Text strong={item.status === 'completed'}>{item.name}</Text><Text type="secondary" style={{ fontSize: 12 }}>({formatSizeLabel(item.file.size)})</Text></Space>}
-                description={<div style={{ marginTop: 4 }}>
-                  {item.status === 'failed' ? <Text type="danger">{item.error}</Text> :
-                   item.status === 'completed' ? <Text type="success">处理完成</Text> :
-                   item.subProgress ? <Space direction="vertical" style={{ width: '100%' }} size={0}><Progress percent={Math.round((item.subProgress.current / item.subProgress.total) * 100)} size="small" strokeColor="#000" /><Text type="secondary" style={{ fontSize: 12 }}>{item.subProgress.message}</Text></Space> : <Progress percent={item.progress} size="small" strokeColor="#000" />
+          
+          <List
+            dataSource={fileList}
+            renderItem={(file) => (
+              <List.Item
+                key={file.uid}
+                style={{ padding: '12px 16px', background: '#fff', borderRadius: 8, marginBottom: 8, border: '1px solid #f0f0f0' }}
+                actions={[
+                  file.status === 'completed' && (
+                    <Space key="ops">
+                      <Tooltip title="复制直链 (加速重试)"><Button type="text" size="small" icon={<CopyOutlined />} onClick={() => copyLink(file)} /></Tooltip>
+                      <Button type="primary" size="small" icon={<DownloadOutlined />} onClick={() => downloadFile(file)}>下载</Button>
+                    </Space>
+                  ),
+                  file.status === 'error' && <Tag key="err" color="error">失败</Tag>,
+                  !isProcessing && file.status === 'wait' && <Button key="del" type="text" danger icon={<DeleteOutlined />} onClick={() => setFileList(prev => prev.filter(f => f.uid !== file.uid))} />
+                ].filter(Boolean)}
+              >
+                <List.Item.Meta
+                  avatar={<FilePdfOutlined style={{ fontSize: 24, color: file.status === 'completed' ? '#52c41a' : '#bfbfbf' }} />}
+                  title={<Text strong ellipsis style={{ maxWidth: 200 }}>{file.name}</Text>}
+                  description={
+                    <Space size={4} style={{ fontSize: 12 }}>
+                      <Text type="secondary">{formatSize(file.size)}</Text>
+                      {file.status === 'uploading' && <Text type="secondary">· 正在上传 {file.progress}%</Text>}
+                      {file.status === 'processing' && <Text type="secondary">· 正在转换 <SyncOutlined spin /></Text>}
+                      {file.status === 'completed' && <Text type="success">· 已完成 <CheckCircleOutlined /></Text>}
+                    </Space>
                   }
-                </div>}
-              />
-            </List.Item>
-          )} />
+                />
+              </List.Item>
+            )}
+          />
         </div>
       )}
     </Card>
   );
-};
+}

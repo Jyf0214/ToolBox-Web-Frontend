@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { Layout, Typography, Button, Breadcrumb } from 'antd';
-import { FileConverter } from './FileConverter';
+import FileConverter from './FileConverter';
 import { ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
 
