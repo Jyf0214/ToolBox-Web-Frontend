@@ -1,8 +1,8 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Upload, Button, List, Card, Space, Typography, message, Tag, Tooltip } from 'antd';
-import { InboxOutlined, FilePdfOutlined, DownloadOutlined, PlayCircleOutlined, DeleteOutlined, CopyOutlined, CheckCircleOutlined, SyncOutlined } from '@ant-design/icons';
+import { Upload, Button, List, Card, Space, Typography, message, Tag, Tooltip, Alert } from 'antd';
+import { InboxOutlined, FilePdfOutlined, DownloadOutlined, PlayCircleOutlined, DeleteOutlined, CopyOutlined, CheckCircleOutlined, SyncOutlined, InfoCircleOutlined } from '@ant-design/icons';
 import { v4 as uuidv4 } from 'uuid';
 
 const { Dragger } = Upload;
@@ -163,6 +163,16 @@ export default function FileConverter() {
 
       {fileList.length > 0 && (
         <div style={{ marginTop: 24 }}>
+          {fileList.some(f => f.status === 'completed') && (
+            <Alert
+              message="下载建议"
+              description="如果您下载的是大文件或下载速度较慢，建议点击图标复制直链并使用多线程下载工具（如 IDM、Motrix）进行下载。"
+              type="info"
+              showIcon
+              icon={<InfoCircleOutlined />}
+              style={{ marginBottom: 16, borderRadius: 8 }}
+            />
+          )}
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16, alignItems: 'center' }}>
             <Title level={5} style={{ margin: 0 }}>待处理文件 ({fileList.length})</Title>
             <Space>
