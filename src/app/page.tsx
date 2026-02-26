@@ -1,9 +1,10 @@
 'use client';
 
-import React from 'react';
-import { ConfigProvider, Layout, Typography, Grid, Card, Space, Button } from 'antd';
-import { FileText, Github, ChevronRight, FileDown, User, Settings } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { ConfigProvider, Layout, Typography, Grid, Card, Space, Button, Dropdown, Avatar } from 'antd';
+import { FileText, Github, ChevronRight, FileDown, User, Settings, LogOut } from 'lucide-react';
 import Link from 'next/link';
+import { getAuth, logout, AuthData } from '@/lib/auth';
 
 const { Header, Content, Footer } = Layout;
 const { Title, Text } = Typography;
@@ -12,6 +13,11 @@ const { useBreakpoint } = Grid;
 export default function Home() {
   const screens = useBreakpoint();
   const isMobile = !screens.md;
+  const [auth, setAuth] = useState<AuthData | null>(null);
+
+  useEffect(() => {
+    setAuth(getAuth());
+  }, []);
 
   const tools = [
     {
@@ -28,7 +34,24 @@ export default function Home() {
       path: '/tools/markdown',
       color: '#1f1f1f'
     }
-    // 未来可在此添加更多工具
+  ];
+
+  const userMenuItems = [
+    {
+      key: 'settings',
+      label: <Link href="/admin/settings">系统设置</Link>,
+      icon: <Settings size={14} />,
+    },
+    {
+      type: 'divider',
+    },
+    {
+      key: 'logout',
+      label: '退出登录',
+      icon: <LogOut size={14} />,
+      danger: true,
+      onClick: () => logout(),
+    },
   ];
 
   return (
@@ -39,11 +62,6 @@ export default function Home() {
           borderRadius: 8,
           fontFamily: "'Inter', -apple-system, sans-serif",
         },
-        components: {
-          Button: {
-            textHoverBg: 'rgba(0, 0, 0, 0.04)',
-          }
-        }
       }}
     >
       <Layout style={{ minHeight: '100vh', background: '#fff' }}>
@@ -66,15 +84,22 @@ export default function Home() {
           </Space>
           
           <Space size={isMobile ? 8 : 16}>
-            <Link href="/admin/settings">
-              <Button type="text" icon={<Settings size={18} />} />
-            </Link>
-            
-            <Link href="/auth/login">
-              <Button type="default" icon={<User size={16} />} style={{ borderRadius: 6 }}>
-                登录
-              </Button>
-            </Link>
+            {auth ? (
+              <Dropdown menu={{ items: userMenuItems }} placement="bottomRight">
+                <Button type="text" style={{ height: 40, padding: '0 8px' }}>
+                  <Space>
+                    <Avatar size="small" style={{ backgroundColor: '#000' }} icon={<User size={14} />} />
+                    {!isMobile && <Text strong>{auth.user.username}</Text>}
+                  </Space>
+                </Button>
+              </Dropdown>
+            ) : (
+              <Link href="/auth/login">
+                <Button type="default" icon={<User size={16} />} style={{ borderRadius: 6 }}>
+                  登录
+                </Button>
+              </Link>
+            )}
 
             {!isMobile && (
               <Button 

@@ -1,12 +1,12 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Layout, Card, Form, Input, Button, Typography, Space, message } from 'antd';
+import { Layout, Card, Form, Input, Button, Typography, message } from 'antd';
 import { UserOutlined, LockOutlined, ArrowLeftOutlined } from '@ant-design/icons';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { setAuth } from '@/lib/auth';
 
-const { Content } = Layout;
 const { Title, Text } = Typography;
 
 export default function LoginPage() {
@@ -16,10 +16,24 @@ export default function LoginPage() {
   const onFinish = async (values: any) => {
     setLoading(true);
     try {
-      // 待实现：调用后端登录接口
-      message.warning('登录功能正在接入中...');
-    } catch (err) {
-      message.error('登录失败');
+      const res = await fetch('/api/proxy/users/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(values)
+      });
+      const data = await res.json();
+
+      if (res.ok && data.success) {
+        setAuth(data.data);
+        message.success('登录成功');
+        router.push('/');
+        // 强制刷新以让首页感知登录态 (简单粗暴有效)
+        setTimeout(() => window.location.reload(), 100);
+      } else {
+        throw new Error(data.message || '登录失败');
+      }
+    } catch (err: any) {
+      message.error(err.message);
     } finally {
       setLoading(false);
     }

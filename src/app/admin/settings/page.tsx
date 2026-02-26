@@ -5,6 +5,8 @@ import { Layout, Typography, Form, Input, InputNumber, Switch, Button, Card, mes
 import { MailOutlined, SaveOutlined, ArrowLeftOutlined, ThunderboltOutlined } from '@ant-design/icons';
 import Link from 'next/link';
 import { useResponsive } from 'antd-style';
+import { getAuthHeader } from '@/lib/auth';
+import { useRouter } from 'next/navigation';
 
 const { Content } = Layout;
 const { Title, Text } = Typography;
@@ -15,6 +17,7 @@ export default function SettingsPage() {
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const { mobile } = useResponsive();
+  const router = useRouter();
 
   useEffect(() => {
     fetchData();
@@ -23,7 +26,16 @@ export default function SettingsPage() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/proxy/config/smtp');
+      const res = await fetch('/api/proxy/config/smtp', {
+        headers: getAuthHeader()
+      });
+      
+      if (res.status === 401 || res.status === 403) {
+        message.error('权限不足，请先登录');
+        router.push('/auth/login');
+        return;
+      }
+
       const data = await res.json();
       if (data.success && data.data) {
         form.setFieldsValue(data.data);
@@ -40,7 +52,10 @@ export default function SettingsPage() {
     try {
       const res = await fetch('/api/proxy/config/smtp', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          ...getAuthHeader()
+        },
         body: JSON.stringify(values)
       });
       const data = await res.json();
@@ -62,7 +77,10 @@ export default function SettingsPage() {
       setTesting(true);
       const res = await fetch('/api/proxy/config/test-smtp', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          ...getAuthHeader()
+        },
         body: JSON.stringify(values)
       });
       const data = await res.json();
