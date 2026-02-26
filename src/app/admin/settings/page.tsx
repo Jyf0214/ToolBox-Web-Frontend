@@ -1,9 +1,8 @@
 'use client';
 
 import React, { useEffect, useState, useCallback } from 'react';
-import { Layout, Typography, Form, Input, InputNumber, Switch, Button, Card, message, Breadcrumb, Tabs, Select, Spin } from 'antd';
-import type { Rule } from 'antd/es/form';
-import { SaveOutlined, ArrowLeftOutlined, ThunderboltOutlined } from '@ant-design/icons';
+import { Layout, Typography, Input, InputNumber, Switch, Card, message, Breadcrumb, Tabs, Select, Spin, Space, Button } from 'antd';
+import { ArrowLeftOutlined, LockOutlined, UnlockOutlined, LoadingOutlined, CheckCircleOutlined } from '@ant-design/icons';
 import Link from 'next/link';
 import { useResponsive } from 'antd-style';
 import { getAuthHeader } from '@/lib/auth';
@@ -32,12 +31,131 @@ interface ConfigSchemaItem {
   tooltip?: string;
 }
 
+/**
+ * 单个配置项组件：实现“修改即保存”和“密钥锁定”
+ */
+const ConfigField: React.FC<{ 
+  item: ConfigSchemaItem; 
+  initialValue: unknown;
+}> = ({ item, initialValue }) => {
+  const [value, setValue] = useState(initialValue);
+  const [loading, setLoading] = useState(false);
+  const [locked, setLocked] = useState(item.type === 'password');
+  const [success, setSuccess] = useState(false);
+
+  const triggerSave = async (newValue: unknown) => {
+    if (item.type === 'password' && locked && newValue === '********') return;
+    
+    setLoading(true);
+    setSuccess(false);
+    try {
+      const res = await fetch('/api/proxy/config/batch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
+        body: JSON.stringify({ [item.key]: newValue })
+      });
+      const data = (await res.json()) as { success: boolean };
+      if (data.success) {
+        setSuccess(true);
+        setTimeout(() => setSuccess(false), 2000);
+      }
+    } catch {
+      message.error(`${item.label} 保存失败`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const renderControl = () => {
+    const commonProps = {
+      disabled: loading || locked,
+      style: { width: '100%' },
+      placeholder: item.placeholder
+    };
+
+    switch (item.type) {
+      case 'switch':
+        return <Switch 
+          checked={Boolean(value)} 
+          disabled={loading}
+          onChange={(val) => { setValue(val); triggerSave(val); }} 
+        />;
+      case 'number':
+        return <InputNumber 
+          {...commonProps} 
+          value={value as number} 
+          onChange={setValue}
+          onBlur={() => triggerSave(value)}
+        />;
+      case 'select':
+        return <Select 
+          {...commonProps} 
+          value={value} 
+          options={item.options as { label: string; value: string }[]} 
+          onChange={(val) => { setValue(val); triggerSave(val); }} 
+        />;
+      case 'multi-select':
+        return <Select 
+          {...commonProps} 
+          mode="multiple" 
+          value={value as string[]} 
+          options={item.options as { label: string; value: string }[]} 
+          onChange={(val) => { setValue(val); triggerSave(val); }} 
+        />;
+      case 'password':
+        return (
+          <Space.Compact style={{ width: '100%' }}>
+            <Input.Password 
+              {...commonProps} 
+              value={value as string} 
+              visibilityToggle={!locked}
+              onChange={(e) => setValue(e.target.value)}
+              onBlur={() => { if(!locked) triggerSave(value); }}
+            />
+            <Button 
+              icon={locked ? <LockOutlined /> : <UnlockOutlined />} 
+              onClick={() => {
+                if (locked) {
+                  setLocked(false);
+                  setValue('');
+                } else {
+                  setLocked(true);
+                  setValue('********');
+                }
+              }}
+              title={locked ? "点击解锁以编辑" : "点击锁定"}
+            />
+          </Space.Compact>
+        );
+      default:
+        return <Input 
+          {...commonProps} 
+          value={value as string} 
+          onChange={(e) => setValue(e.target.value)} 
+          onBlur={() => triggerSave(value)}
+        />;
+    }
+  };
+
+  return (
+    <div style={{ marginBottom: 20 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+        <Text strong style={{ fontSize: 13 }}>{item.label}</Text>
+        <div style={{ fontSize: 12 }}>
+          {loading && <Text type="secondary"><LoadingOutlined /> 正在同步...</Text>}
+          {success && <Text type="success"><CheckCircleOutlined /> 已保存</Text>}
+        </div>
+      </div>
+      {renderControl()}
+      {item.tooltip && <div style={{ fontSize: 12, color: '#999', marginTop: 4 }}>{item.tooltip}</div>}
+    </div>
+  );
+};
+
 export default function DynamicSettingsPage() {
-  const [form] = Form.useForm();
   const [schema, setSchema] = useState<ConfigSchemaItem[]>([]);
+  const [configValues, setConfigValues] = useState<Record<string, unknown>>({});
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [testing, setTesting] = useState(false);
   const { mobile } = useResponsive();
   const router = useRouter();
 
@@ -56,84 +174,28 @@ export default function DynamicSettingsPage() {
 
       if (schemaData.success && configData.success) {
         setSchema(schemaData.data);
-        form.setFieldsValue(configData.data);
+        setConfigValues(configData.data);
       }
     } catch {
-      message.error('初始化配置引擎失败');
+      message.error('配置引擎连接失败');
     } finally {
       setLoading(false);
     }
-  }, [router, form]);
+  }, [router]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  const onSave = async (values: unknown) => {
-    setSaving(true);
-    try {
-      const res = await fetch('/api/proxy/config/batch', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
-        body: JSON.stringify(values)
-      });
-      const data = (await res.json()) as { success: boolean };
-      if (data.success) message.success('全局配置已更新');
-    } catch {
-      message.error('保存失败');
-    } finally { setSaving(false); }
-  };
-
-  const testSmtp = async () => {
-    setTesting(true);
-    try {
-      const values = await form.validateFields();
-      const res = await fetch('/api/proxy/config/test-smtp', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
-        body: JSON.stringify(values)
-      });
-      const data = (await res.json()) as { success: boolean; message?: string };
-      if (data.success) message.success('邮件服务连接成功');
-      else message.error(data.message || '连接失败');
-    } catch { message.error('请检查表单填写'); } finally { setTesting(false); }
-  };
-
-  const renderField = (item: ConfigSchemaItem) => {
-    const options = (item.options || []) as { label: string; value: string }[];
-    switch (item.type) {
-      case 'switch': return <Switch />;
-      case 'number': return <InputNumber style={{ width: '100%' }} placeholder={item.placeholder} />;
-      case 'password': return <Input.Password placeholder="********" />;
-      case 'select': return <Select options={options} />;
-      case 'multi-select': return <Select mode="multiple" options={options} />;
-      default: return <Input placeholder={item.placeholder} />;
-    }
-  };
-
-  if (loading) return <div style={{ padding: 100, textAlign: 'center' }}><Spin tip="正在启动配置引擎..." /></div>;
+  if (loading) return <div style={{ padding: 100, textAlign: 'center' }}><Spin tip="加载安全配置中..." /></div>;
 
   const groups = Array.from(new Set(schema.map(s => s.group)));
   const tabItems = groups.map(groupName => ({
     key: groupName,
     label: groupName,
     children: (
-      <div style={{ padding: '8px 4px' }}>
+      <div style={{ padding: '16px 8px' }}>
         {schema.filter(s => s.group === groupName).map(item => (
-          <Form.Item 
-            key={item.key} 
-            name={item.key} 
-            label={item.label} 
-            rules={item.rules as Rule[]}
-            tooltip={item.tooltip}
-            valuePropName={item.type === 'switch' ? 'checked' : 'value'}
-          >
-            {renderField(item)}
-          </Form.Item>
+          <ConfigField key={item.key} item={item} initialValue={configValues[item.key]} />
         ))}
-        {groupName === '邮件服务' && (
-          <Button icon={<ThunderboltOutlined />} onClick={testSmtp} loading={testing} style={{ marginBottom: 24 }}>
-            测试 SMTP 连接
-          </Button>
-        )}
       </div>
     )
   }));
@@ -146,24 +208,13 @@ export default function DynamicSettingsPage() {
           <Link href="/"><Button icon={<ArrowLeftOutlined />} type="text" /></Link>
           <div>
             <Title level={2} style={{ margin: 0, fontWeight: 800 }}>系统配置</Title>
-            <Text type="secondary">基于 Schema 的动态配置引擎</Text>
+            <Text type="secondary">修改即保存 · 密钥安全保护</Text>
           </div>
         </div>
-        <Form form={form} layout="vertical" onFinish={onSave}>
-          <Card 
-            variant="borderless" 
-            style={{ borderRadius: 16, boxShadow: '0 4px 12px rgba(0,0,0,0.02)' }}
-            actions={[
-              <div key="save" style={{ padding: '0 24px' }}>
-                <Button type="primary" htmlType="submit" icon={<SaveOutlined />} loading={saving} block size="large" style={{ background: '#000' }}>
-                  保存所有修改
-                </Button>
-              </div>
-            ]}
-          >
-            <Tabs defaultActiveKey={groups[0]} items={tabItems} tabPosition={mobile ? 'top' : 'left'} style={{ minHeight: 400 }} />
-          </Card>
-        </Form>
+        
+        <Card variant="borderless" style={{ borderRadius: 16, boxShadow: '0 4px 12px rgba(0,0,0,0.02)' }}>
+          <Tabs defaultActiveKey={groups[0]} items={tabItems} tabPosition={mobile ? 'top' : 'left'} style={{ minHeight: 400 }} />
+        </Card>
       </Content>
     </Layout>
   );
