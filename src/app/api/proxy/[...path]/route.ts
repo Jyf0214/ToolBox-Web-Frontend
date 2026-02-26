@@ -11,6 +11,7 @@ export const runtime = 'edge';
 export const dynamic = 'force-dynamic';
 
 const BACKEND_URL = process.env.BACKEND_API_URL || 'http://localhost:7860/api';
+const INTERNAL_API_KEY = process.env.INTERNAL_API_KEY || '';
 
 async function handleProxy(req: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
   const { path: pathArray } = await params;
@@ -28,6 +29,11 @@ async function handleProxy(req: NextRequest, { params }: { params: Promise<{ pat
       headers.set(key, value);
     }
   });
+
+  // 🔐 注入私有通信密钥 (仅服务端可见)
+  if (INTERNAL_API_KEY) {
+    headers.set('x-internal-api-key', INTERNAL_API_KEY);
+  }
 
   try {
     const fetchOptions: RequestInit = {

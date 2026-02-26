@@ -42,12 +42,16 @@
 BACKEND_API_URL=http://your-backend-ip:7860/api
 # (可选) 直连下载加速，解决 CDN 代理限速问题
 NEXT_PUBLIC_DIRECT_API_URL=http://your-backend-ip:7860/api
+# (建议) 前后端私有通信密钥，防止后端 API 被直接扫描攻击
+INTERNAL_API_KEY=your_secret_key_here
 ```
 
 - **BACKEND_API_URL**: 后端 API 的真实路径（仅服务端可见，用于代理请求）。
+- **INTERNAL_API_KEY**: 前端注入的密钥。需与后端 `FRONTEND_API_KEY` 保持一致。
 - **NEXT_PUBLIC_DIRECT_API_URL**: 前端直连后端的地址。配置后，下载请求将绕过代理直接访问后端，极大提升下载速度。若不配置，默认回退到代理路径。
-- **安全保障**: 客户端（浏览器）现在只能看到 `/api/proxy/...`，无法获知真实 IP。
-- **日志**: 所有通过代理的错误都会记录在 Vercel / 服务端日志中。
+- **安全保障**: 
+  - 客户端（浏览器）现在只能看到 `/api/proxy/...`，无法获知真实 IP。
+  - 后端若配置了 `FRONTEND_API_KEY`，则只接受来自代理函数的请求，直接访问 API 将被拒绝 (403)。
 
 ## 🚀 本地开发
 
