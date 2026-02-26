@@ -19,10 +19,6 @@ export default function SettingsPage() {
   const { mobile } = useResponsive();
   const router = useRouter();
 
-  useEffect(() => {
-    fetchData();
-  }, []);
-
   const fetchData = async () => {
     setLoading(true);
     try {
@@ -36,18 +32,23 @@ export default function SettingsPage() {
         return;
       }
 
-      const data = await res.json();
+      const data = (await res.json()) as { success: boolean; data?: Record<string, unknown> };
       if (data.success && data.data) {
         form.setFieldsValue(data.data);
       }
-    } catch (err) {
+    } catch {
       message.error('加载配置失败');
     } finally {
       setLoading(false);
     }
   };
 
-  const onFinish = async (values: any) => {
+  useEffect(() => {
+    fetchData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const onFinish = async (values: Record<string, unknown>) => {
     setSaving(true);
     try {
       const res = await fetch('/api/proxy/config/smtp', {
@@ -58,14 +59,14 @@ export default function SettingsPage() {
         },
         body: JSON.stringify(values)
       });
-      const data = await res.json();
+      const data = (await res.json()) as { success: boolean; message?: string };
       if (data.success) {
         message.success('配置已保存');
       } else {
         throw new Error(data.message);
       }
-    } catch (err: any) {
-      message.error(`保存失败: ${err.message}`);
+    } catch (err: unknown) {
+      message.error(`保存失败: ${err instanceof Error ? err.message : '未知错误'}`);
     } finally {
       setSaving(false);
     }
@@ -83,13 +84,13 @@ export default function SettingsPage() {
         },
         body: JSON.stringify(values)
       });
-      const data = await res.json();
+      const data = (await res.json()) as { success: boolean; message?: string };
       if (data.success) {
         message.success('SMTP 连接测试成功！');
       } else {
         message.error(data.message || '连接失败');
       }
-    } catch (err: any) {
+    } catch {
       message.error('表单校验未通过或请求错误');
     } finally {
       setTesting(false);

@@ -34,7 +34,7 @@ async function handleProxy(req: NextRequest, { params }: { params: Promise<{ pat
       method,
       headers,
       body: (method !== 'GET' && method !== 'HEAD') ? req.body : undefined,
-      // @ts-ignore
+      // @ts-expect-error - duplex 是边缘运行时转发 body 所必需的
       duplex: 'half', 
       redirect: 'follow',
       cache: 'no-store'
@@ -65,16 +65,15 @@ async function handleProxy(req: NextRequest, { params }: { params: Promise<{ pat
     resHeaders.set('Access-Control-Expose-Headers', 'Content-Disposition, Content-Range, Content-Length');
 
     // 3. 直接返回流 (不做任何变换)
-    // 注意：如果 status 是 206 (Partial Content)，浏览器和下载工具会正确处理
     return new NextResponse(response.body, {
       status: response.status,
       headers: resHeaders,
     });
 
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error(`[PROXY FAIL] ${targetUrl}:`, error);
     return NextResponse.json(
-      { success: false, message: '代理连接断开', error: error.message },
+      { success: false, message: '代理连接断开', error: error instanceof Error ? error.message : 'Unknown' },
       { status: 502 }
     );
   }

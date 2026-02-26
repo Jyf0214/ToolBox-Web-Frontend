@@ -13,7 +13,7 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const router = useRouter();
 
-  const onFinish = async (values: any) => {
+  const onFinish = async (values: unknown) => {
     setLoading(true);
     try {
       const res = await fetch('/api/proxy/users/login', {
@@ -27,13 +27,12 @@ export default function LoginPage() {
         setAuth(data.data);
         message.success('登录成功');
         router.push('/');
-        // 强制刷新以让首页感知登录态 (简单粗暴有效)
         setTimeout(() => window.location.reload(), 100);
       } else {
         throw new Error(data.message || '登录失败');
       }
-    } catch (err: any) {
-      message.error(err.message);
+    } catch (err: unknown) {
+      message.error(err instanceof Error ? err.message : '登录失败');
     } finally {
       setLoading(false);
     }
@@ -54,35 +53,15 @@ export default function LoginPage() {
             <Text type="secondary">登录以管理您的 ToolBox</Text>
           </div>
 
-          <Form
-            name="login"
-            layout="vertical"
-            onFinish={onFinish}
-            autoComplete="off"
-          >
-            <Form.Item
-              name="username"
-              rules={[{ required: true, message: '请输入用户名' }]}
-            >
+          <Form name="login" layout="vertical" onFinish={onFinish} autoComplete="off">
+            <Form.Item name="username" rules={[{ required: true, message: '请输入用户名' }]}>
               <Input prefix={<UserOutlined />} placeholder="用户名" size="large" />
             </Form.Item>
-
-            <Form.Item
-              name="password"
-              rules={[{ required: true, message: '请输入密码' }]}
-            >
+            <Form.Item name="password" rules={[{ required: true, message: '请输入密码' }]}>
               <Input.Password prefix={<LockOutlined />} placeholder="密码" size="large" />
             </Form.Item>
-
             <Form.Item>
-              <Button 
-                type="primary" 
-                htmlType="submit" 
-                loading={loading} 
-                block 
-                size="large"
-                style={{ background: '#000', borderColor: '#000', height: 48, borderRadius: 8 }}
-              >
+              <Button type="primary" htmlType="submit" loading={loading} block size="large" style={{ background: '#000', borderColor: '#000', height: 48, borderRadius: 8 }}>
                 登录
               </Button>
             </Form.Item>

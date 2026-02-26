@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { ConfigProvider, Layout, Typography, Grid, Card, Space, Button, Dropdown, Avatar } from 'antd';
+import type { MenuProps } from 'antd';
 import { FileText, Github, ChevronRight, FileDown, User, Settings, LogOut } from 'lucide-react';
 import Link from 'next/link';
 import { getAuth, logout, AuthData } from '@/lib/auth';
@@ -16,7 +17,10 @@ export default function Home() {
   const [auth, setAuth] = useState<AuthData | null>(null);
 
   useEffect(() => {
-    setAuth(getAuth());
+    const data = getAuth();
+    if (data) {
+      Promise.resolve().then(() => setAuth(data));
+    }
   }, []);
 
   const tools = [
@@ -36,7 +40,7 @@ export default function Home() {
     }
   ];
 
-  const userMenuItems = [
+  const userMenuItems: MenuProps['items'] = [
     {
       key: 'settings',
       label: <Link href="/admin/settings">系统设置</Link>,

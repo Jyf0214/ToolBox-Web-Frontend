@@ -1,6 +1,21 @@
 #!/usr/bin/env sh
 . "$(dirname -- "$0")/_/husky.sh"
 
-echo "🚀 [Frontend] 正在运行提交前检查 (Lint + Build)..."
-npm run lint && npm run build
-echo "✅ [Frontend] 检查通过，允许提交"
+echo "🔍 [Frontend] Starting Pre-commit Checks..."
+
+# 运行 Lint
+npm run lint
+if [ $? -ne 0 ]; then
+  echo "❌ [Frontend] Lint failed. Commit aborted."
+  exit 1
+fi
+
+# 运行 Build
+npm run build
+if [ $? -ne 0 ]; then
+  echo "❌ [Frontend] Build failed. Commit aborted."
+  exit 1
+fi
+
+echo "✅ [Frontend] All checks passed. Proceeding with commit."
+exit 0

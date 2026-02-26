@@ -1,53 +1,45 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Layout, Typography, Button, Input, Card, message, Space, Breadcrumb, theme, notification } from 'antd';
+import { Layout, Typography, Button, Input, Card, message, Breadcrumb, notification } from 'antd';
 import { ArrowLeft, FileDown, Loader2 } from 'lucide-react';
 import Link from 'next/link';
 import { useResponsive } from 'antd-style';
 
 const { Content } = Layout;
-const { Title, Text, Paragraph } = Typography;
+const { Title, Text } = Typography;
 const { TextArea } = Input;
 
-// 注意：这里不再是 API 路由，而是匹配 next.config.ts 中的 rewrites
 const PROXY_PATH = '/api/proxy';
-// 优先使用直连地址下载以获得满速体验，否则回退到代理
 const DIRECT_API_URL = process.env.NEXT_PUBLIC_DIRECT_API_URL || PROXY_PATH;
 
 export default function MarkdownPage() {
   const [content, setContent] = useState('');
   const [loading, setLoading] = useState(false);
-  const { token } = theme.useToken();
   const { mobile } = useResponsive();
 
-  const showErrorLog = (msg: string, error: any, details?: string) => {
+  const showErrorLog = (msg: string, error: unknown, details?: string) => {
+    const errorMsg = error instanceof Error ? error.message : String(error);
     const truncatedDetails = details && details.length > 5000 
       ? details.substring(0, 5000) + '\n... [日志过长已截断]' 
       : details;
 
     notification.error({
-      message: <Text strong style={{ fontSize: 13 }}>{msg}</Text>,
+      message: msg,
+      title: msg,
       description: (
         <div style={{ maxHeight: 200, overflowY: 'auto', overflowX: 'hidden' }}>
           <div style={{ marginBottom: 4 }}>
             <Text type="secondary" style={{ fontSize: 11 }}>原因:</Text>
-            <div style={{ fontSize: 12, color: '#ff4d4f', marginTop: 2 }}>{error?.message || String(error)}</div>
+            <div style={{ fontSize: 12, color: '#ff4d4f', marginTop: 2 }}>{errorMsg}</div>
           </div>
           {truncatedDetails && (
             <div style={{ marginTop: 8 }}>
               <Text type="secondary" style={{ fontSize: 11 }}>反馈 (RAW):</Text>
               <pre style={{ 
-                fontSize: 10, 
-                background: '#fafafa', 
-                padding: '6px 8px', 
-                marginTop: 4, 
-                whiteSpace: 'pre-wrap', 
-                wordBreak: 'break-all', 
-                borderRadius: 4,
-                color: '#888',
-                border: '1px solid #f0f0f0',
-                fontFamily: 'SFMono-Regular, Consolas, monospace'
+                fontSize: 10, background: '#fafafa', padding: '6px 8px', marginTop: 4, 
+                whiteSpace: 'pre-wrap', wordBreak: 'break-all', borderRadius: 4,
+                color: '#888', border: '1px solid #f0f0f0', fontFamily: 'monospace'
               }}>
                 {truncatedDetails}
               </pre>
@@ -58,7 +50,7 @@ export default function MarkdownPage() {
       duration: 10,
       placement: 'topRight',
       style: { width: mobile ? '90vw' : 400, padding: '12px 16px' }
-    } as any);
+    });
   };
 
   const handleConvert = async () => {
@@ -69,7 +61,6 @@ export default function MarkdownPage() {
 
     setLoading(true);
     try {
-      // 1. 提交转换任务
       const res = await fetch(`${PROXY_PATH}/convert/md-to-pdf`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -81,16 +72,15 @@ export default function MarkdownPage() {
         throw new Error(`HTTP ${res.status}: ${text || '提交失败'}`);
       }
       
-      const { jobId } = await res.json();
+      const responseData = (await res.json()) as { jobId: string };
+      const jobId = responseData.jobId;
 
-      // 2. 轮询状态
       const poll = async () => {
         try {
           const statusRes = await fetch(`${PROXY_PATH}/convert/md/status/${jobId}`);
-          const data = await statusRes.json();
+          const data = (await statusRes.json()) as { status: string; token: string; error?: string };
 
           if (data.status === 'completed') {
-            // 3. 下载 (走直连，提速)
             window.open(`${DIRECT_API_URL}/convert/md/download/${jobId}?token=${data.token}`, '_blank');
             setLoading(false);
             message.success('转换成功！');
@@ -100,13 +90,13 @@ export default function MarkdownPage() {
           } else {
             setTimeout(poll, 2000);
           }
-        } catch (pollErr: any) {
+        } catch (pollErr: unknown) {
           showErrorLog('状态查询异常', pollErr);
           setLoading(false);
         }
       };
       poll();
-    } catch (err: any) {
+    } catch (err: unknown) {
       showErrorLog('请求提交失败', err);
       setLoading(false);
     }
