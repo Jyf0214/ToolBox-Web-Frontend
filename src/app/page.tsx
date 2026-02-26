@@ -43,7 +43,7 @@ export default function Home() {
   const userMenuItems: MenuProps['items'] = [
     {
       key: 'settings',
-      label: <Link href="/admin/settings">系统设置</Link>,
+      label: <Link href="/admin/settings">设置</Link>,
       icon: <Settings size={14} />,
     },
     {
