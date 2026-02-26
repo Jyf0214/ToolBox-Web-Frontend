@@ -107,6 +107,9 @@ export default function SettingsPage() {
               <Form.Item label="允许游客访问" name="allow_guest_access" valuePropName="checked">
                 <Switch />
               </Form.Item>
+              <Form.Item label="最大验证用户数" name="max_verified_users" tooltip="达到此数量后自动关闭注册接口">
+                <InputNumber min={1} style={{ width: '100%' }} />
+              </Form.Item>
             </Card>
             <Card title="额度与单位" size="small" variant="borderless" style={{ background: '#fcfcfc' }}>
               <Form.Item label="免费用户额度" name="free_user_quota">
