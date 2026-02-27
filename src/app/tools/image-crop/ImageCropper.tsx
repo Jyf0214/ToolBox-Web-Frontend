@@ -28,6 +28,7 @@ export default function ImageCropper() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [processProgress, setProcessProgress] = useState(0);
   const imgRef = useRef<HTMLImageElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     return () => imageList.forEach(item => URL.revokeObjectURL(item.preview));
@@ -41,14 +42,15 @@ export default function ImageCropper() {
     const formData = new FormData();
     const firstImg = imgRef.current;
     
-    const scaleX = firstImg.naturalWidth / firstImg.clientWidth;
-    const scaleY = firstImg.naturalHeight / firstImg.clientHeight;
+    // 关键修复：使用 naturalWidth 和 displayed width 计算精确比例
+    const scaleX = firstImg.naturalWidth / firstImg.width;
+    const scaleY = firstImg.naturalHeight / firstImg.height;
 
     const realCrop = {
-      x: crop.x * scaleX,
-      y: crop.y * scaleY,
-      width: crop.width * scaleX,
-      height: crop.height * scaleY
+      x: Math.round(crop.x * scaleX),
+      y: Math.round(crop.y * scaleY),
+      width: Math.round(crop.width * scaleX),
+      height: Math.round(crop.height * scaleY)
     };
 
     try {
@@ -78,36 +80,50 @@ export default function ImageCropper() {
   };
 
   const processImage = (file: File, rc: CropData): Promise<Blob> => {
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
       const img = new Image();
       img.src = URL.createObjectURL(file);
       img.onload = () => {
         const canvas = document.createElement('canvas');
         canvas.width = rc.width;
         canvas.height = rc.height;
-        const ctx = canvas.getContext('2d')!;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) { reject(new Error('Canvas error')); return; }
+        
         ctx.drawImage(img, rc.x, rc.y, rc.width, rc.height, 0, 0, rc.width, rc.height);
         canvas.toBlob((blob) => {
           URL.revokeObjectURL(img.src);
-          resolve(blob!);
+          if (blob) resolve(blob);
+          else reject(new Error('Blob creation failed'));
         }, file.type);
       };
+      img.onerror = reject;
     });
   };
 
   const onMouseDown = (e: React.MouseEvent) => {
+    if (!containerRef.current) return;
     const startX = e.clientX;
     const startY = e.clientY;
     const startCrop = { ...crop };
+    
+    // 获取容器边界限制
+    const containerRect = containerRef.current.getBoundingClientRect();
+    const maxX = containerRect.width - startCrop.width;
+    const maxY = containerRect.height - startCrop.height;
 
     const onMouseMove = (moveEvent: MouseEvent) => {
       const dx = moveEvent.clientX - startX;
       const dy = moveEvent.clientY - startY;
-      setCrop({
-        ...startCrop,
-        x: Math.max(0, startCrop.x + dx),
-        y: Math.max(0, startCrop.y + dy)
-      });
+      
+      let newX = startCrop.x + dx;
+      let newY = startCrop.y + dy;
+
+      // 边界约束
+      newX = Math.max(0, Math.min(newX, maxX));
+      newY = Math.max(0, Math.min(newY, maxY));
+
+      setCrop(prev => ({ ...prev, x: newX, y: newY }));
     };
 
     const onMouseUp = () => {
@@ -142,13 +158,17 @@ export default function ImageCropper() {
         </Dragger>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
-          <div style={{ position: 'relative', display: 'inline-block', alignSelf: 'center', border: '1px solid #eee', lineHeight: 0 }}>
+          <div 
+            ref={containerRef}
+            style={{ position: 'relative', display: 'inline-block', alignSelf: 'center', border: '1px solid #eee', lineHeight: 0 }}
+          >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img 
               ref={imgRef}
               src={imageList[0].preview} 
               alt="裁剪预览" 
-              style={{ maxWidth: '100%', maxHeight: 500, userSelect: 'none' }}
+              style={{ maxWidth: '100%', maxHeight: 500, userSelect: 'none', display: 'block' }}
+              draggable={false}
             />
             <div 
               onMouseDown={onMouseDown}
@@ -158,21 +178,26 @@ export default function ImageCropper() {
                 top: crop.y,
                 width: crop.width,
                 height: crop.height,
-                border: '2px dashed #fff',
+                border: '2px solid #fff',
                 boxShadow: '0 0 0 9999px rgba(0,0,0,0.5)',
                 cursor: 'move',
                 zIndex: 10
               }}
             >
-              <div style={{ position: 'absolute', right: -5, bottom: -5, width: 10, height: 10, background: '#fff', cursor: 'nwse-resize' }} 
+              {/* 右下角缩放手柄 */}
+              <div 
+                style={{ position: 'absolute', right: -6, bottom: -6, width: 12, height: 12, background: '#1890ff', cursor: 'nwse-resize', borderRadius: '50%' }} 
                 onMouseDown={(e) => {
                   e.stopPropagation();
                   const startX = e.clientX;
                   const startY = e.clientY;
                   const startW = crop.width;
                   const startH = crop.height;
+                  
                   const onMove = (me: MouseEvent) => {
-                    setCrop(prev => ({ ...prev, width: Math.max(10, startW + (me.clientX - startX)), height: Math.max(10, startH + (me.clientY - startY)) }));
+                    const newW = Math.max(20, startW + (me.clientX - startX));
+                    const newH = Math.max(20, startH + (me.clientY - startY));
+                    setCrop(prev => ({ ...prev, width: newW, height: newH }));
                   };
                   const onUp = () => {
                     document.removeEventListener('mousemove', onMove);
@@ -188,7 +213,9 @@ export default function ImageCropper() {
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <Space direction="vertical" size={0}>
               <Title level={5} style={{ margin: 0 }}>批量处理清单 ({imageList.length} 张)</Title>
-              <Text type="secondary" style={{ fontSize: 12 }}>尺寸: {Math.round(crop.width)}x{Math.round(crop.height)}</Text>
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                裁剪尺寸: {Math.round(crop.width)} x {Math.round(crop.height)} px
+              </Text>
             </Space>
             <Space>
               <Button danger icon={<DeleteOutlined />} onClick={() => setImageList([])} disabled={isProcessing}>清空</Button>
