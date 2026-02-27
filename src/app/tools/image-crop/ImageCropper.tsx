@@ -1,10 +1,11 @@
 'use client';
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Upload, Button, Card, Space, Typography, message, List, Progress } from 'antd';
-import { ScissorOutlined, DeleteOutlined, PictureOutlined } from '@ant-design/icons';
+import { ScissorOutlined, DeleteOutlined, PictureOutlined, ExpandOutlined } from '@ant-design/icons';
 import { v4 as uuidv4 } from 'uuid';
 import { getAuthHeader } from '@/lib/auth';
+import { useResponsive } from 'antd-style';
 
 const { Dragger } = Upload;
 const { Title, Text } = Typography;
@@ -24,16 +25,18 @@ interface CropData {
 
 export default function ImageCropper() {
   const [imageList, setImageList] = useState<ImageItem[]>([]);
-  const [crop, setCrop] = useState<CropData>({ x: 50, y: 50, width: 200, height: 200 });
+  const [crop, setCrop] = useState<CropData>({ x: 20, y: 20, width: 150, height: 150 });
   const [isProcessing, setIsProcessing] = useState(false);
   const [processProgress, setProcessProgress] = useState(0);
   const imgRef = useRef<HTMLImageElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const { mobile } = useResponsive();
 
   useEffect(() => {
     return () => imageList.forEach(item => URL.revokeObjectURL(item.preview));
   }, [imageList]);
 
+  // 计算并执行裁剪上传
   const handleStartCrop = async () => {
     if (imageList.length === 0 || !imgRef.current) return;
     setIsProcessing(true);
@@ -42,9 +45,9 @@ export default function ImageCropper() {
     const formData = new FormData();
     const firstImg = imgRef.current;
     
-    // 关键修复：使用 naturalWidth 和 displayed width 计算精确比例
-    const scaleX = firstImg.naturalWidth / firstImg.width;
-    const scaleY = firstImg.naturalHeight / firstImg.height;
+    // 关键：计算物理像素与显示像素的比例
+    const scaleX = firstImg.naturalWidth / firstImg.clientWidth;
+    const scaleY = firstImg.naturalHeight / firstImg.clientHeight;
 
     const realCrop = {
       x: Math.round(crop.x * scaleX),
@@ -69,11 +72,11 @@ export default function ImageCropper() {
       const data = (await res.json()) as { success: boolean; jobId: string; token: string };
 
       if (data.success) {
-        message.success('裁剪并打包成功！');
+        message.success('批量裁剪并打包成功！');
         window.open(`/api/proxy/image/download/${data.jobId}?token=${data.token}`, '_blank');
       }
     } catch {
-      message.error('处理失败');
+      message.error('图像处理服务异常');
     } finally {
       setIsProcessing(false);
     }
@@ -88,90 +91,129 @@ export default function ImageCropper() {
         canvas.width = rc.width;
         canvas.height = rc.height;
         const ctx = canvas.getContext('2d');
-        if (!ctx) { reject(new Error('Canvas error')); return; }
+        if (!ctx) return reject('Canvas context error');
         
         ctx.drawImage(img, rc.x, rc.y, rc.width, rc.height, 0, 0, rc.width, rc.height);
         canvas.toBlob((blob) => {
           URL.revokeObjectURL(img.src);
-          if (blob) resolve(blob);
-          else reject(new Error('Blob creation failed'));
-        }, file.type);
+          if (blob) resolve(blob); else reject('Blob error');
+        }, file.type, 0.9);
       };
-      img.onerror = reject;
+      img.onerror = () => reject('Image load error');
     });
   };
 
-  const onMouseDown = (e: React.MouseEvent) => {
+  // 通用坐标更新逻辑
+  const updateCrop = useCallback((updates: Partial<CropData>) => {
     if (!containerRef.current) return;
-    const startX = e.clientX;
-    const startY = e.clientY;
-    const startCrop = { ...crop };
+    const { width: cw, height: ch } = containerRef.current.getBoundingClientRect();
     
-    // 获取容器边界限制
-    const containerRect = containerRef.current.getBoundingClientRect();
-    const maxX = containerRect.width - startCrop.width;
-    const maxY = containerRect.height - startCrop.height;
+    setCrop(prev => {
+      const next = { ...prev, ...updates };
+      // 边界锁定
+      next.x = Math.max(0, Math.min(next.x, cw - next.width));
+      next.y = Math.max(0, Math.min(next.y, ch - next.height));
+      next.width = Math.min(next.width, cw - next.x);
+      next.height = Math.min(next.height, ch - next.y);
+      return next;
+    });
+  }, []);
 
-    const onMouseMove = (moveEvent: MouseEvent) => {
-      const dx = moveEvent.clientX - startX;
-      const dy = moveEvent.clientY - startY;
-      
-      let newX = startCrop.x + dx;
-      let newY = startCrop.y + dy;
-
-      // 边界约束
-      newX = Math.max(0, Math.min(newX, maxX));
-      newY = Math.max(0, Math.min(newY, maxY));
-
-      setCrop(prev => ({ ...prev, x: newX, y: newY }));
+  // 移动/缩放统一事件处理 (兼容 Mouse & Touch)
+  const bindEvents = (onMove: (e: { clientX: number, clientY: number }) => void) => {
+    const moveHandler = (e: MouseEvent | TouchEvent) => {
+      const point = 'touches' in e ? e.touches[0] : e;
+      onMove({ clientX: point.clientX, clientY: point.clientY });
     };
-
-    const onMouseUp = () => {
-      document.removeEventListener('mousemove', onMouseMove);
-      document.removeEventListener('mouseup', onMouseUp);
+    const upHandler = () => {
+      document.removeEventListener('mousemove', moveHandler);
+      document.removeEventListener('mouseup', upHandler);
+      document.removeEventListener('touchmove', moveHandler);
+      document.removeEventListener('touchend', upHandler);
     };
+    document.addEventListener('mousemove', moveHandler);
+    document.addEventListener('mouseup', upHandler);
+    document.addEventListener('touchmove', moveHandler, { passive: false });
+    document.addEventListener('touchend', upHandler);
+  };
 
-    document.addEventListener('mousemove', onMouseMove);
-    document.addEventListener('mouseup', onMouseUp);
+  const onDragStart = (e: React.MouseEvent | React.TouchEvent) => {
+    const point = 'touches' in e ? e.touches[0] : e;
+    const startX = point.clientX;
+    const startY = point.clientY;
+    const startCrop = { ...crop };
+
+    bindEvents((movePoint) => {
+      const dx = movePoint.clientX - startX;
+      const dy = movePoint.clientY - startY;
+      updateCrop({ x: startCrop.x + dx, y: startCrop.y + dy });
+    });
+  };
+
+  const onResizeStart = (e: React.MouseEvent | React.TouchEvent) => {
+    e.stopPropagation();
+    const point = 'touches' in e ? e.touches[0] : e;
+    const startX = point.clientX;
+    const startY = point.clientY;
+    const startW = crop.width;
+    const startH = crop.height;
+
+    bindEvents((movePoint) => {
+      const dx = movePoint.clientX - startX;
+      const dy = movePoint.clientY - startY;
+      updateCrop({ width: Math.max(20, startW + dx), height: Math.max(20, startH + dy) });
+    });
   };
 
   return (
-    <Card variant="borderless" style={{ borderRadius: 16, boxShadow: '0 4px 24px rgba(0,0,0,0.04)' }}>
+    <Card variant="borderless" style={{ borderRadius: 16, boxShadow: '0 4px 24px rgba(0,0,0,0.04)', overflow: 'hidden' }}>
       {imageList.length === 0 ? (
         <Dragger
           multiple
           accept="image/*"
           showUploadList={false}
           beforeUpload={(file) => {
-            const item: ImageItem = {
-              uid: uuidv4(),
-              file,
-              preview: URL.createObjectURL(file)
-            };
-            setImageList(prev => [...prev, item]);
+            setImageList(prev => [...prev, { uid: uuidv4(), file, preview: URL.createObjectURL(file) }]);
             return false;
           }}
         >
           <p className="ant-upload-drag-icon"><PictureOutlined style={{ color: '#000' }} /></p>
-          <p className="ant-upload-text">点击或拖拽多张图片到此处</p>
-          <p className="ant-upload-hint">支持批量裁剪：在一个裁剪位同时处理所有图片</p>
+          <p className="ant-upload-text">点击或拖拽图片到此处</p>
+          <p className="ant-upload-hint">支持批量同步裁剪 · 移动端已优化</p>
         </Dragger>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+          <Title level={mobile ? 5 : 4} style={{ margin: 0, textAlign: 'center' }}>裁剪区域预览</Title>
+          {/* 1. 裁剪主操作区：增加 max-height 限制 */}
           <div 
             ref={containerRef}
-            style={{ position: 'relative', display: 'inline-block', alignSelf: 'center', border: '1px solid #eee', lineHeight: 0 }}
+            style={{ 
+              position: 'relative', 
+              display: 'inline-block', 
+              alignSelf: 'center', 
+              border: '1px solid #f0f0f0', 
+              lineHeight: 0,
+              maxHeight: mobile ? '50vh' : '60vh',
+              maxWidth: '100%',
+              overflow: 'hidden',
+              touchAction: 'none', // 关键：禁止移动端默认滚动
+              background: '#f9f9f9',
+              borderRadius: 8
+            }}
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img 
               ref={imgRef}
               src={imageList[0].preview} 
-              alt="裁剪预览" 
-              style={{ maxWidth: '100%', maxHeight: 500, userSelect: 'none', display: 'block' }}
+              alt="Crop Source" 
+              style={{ maxHeight: mobile ? '50vh' : '60vh', maxWidth: '100%', userSelect: 'none', display: 'block' }}
               draggable={false}
             />
+            
+            {/* 裁剪遮罩 */}
             <div 
-              onMouseDown={onMouseDown}
+              onMouseDown={onDragStart}
+              onTouchStart={onDragStart}
               style={{
                 position: 'absolute',
                 left: crop.x,
@@ -179,68 +221,70 @@ export default function ImageCropper() {
                 width: crop.width,
                 height: crop.height,
                 border: '2px solid #fff',
-                boxShadow: '0 0 0 9999px rgba(0,0,0,0.5)',
+                boxShadow: '0 0 0 9000px rgba(0,0,0,0.5)',
                 cursor: 'move',
-                zIndex: 10
+                zIndex: 5,
+                boxSizing: 'border-box'
               }}
             >
-              {/* 右下角缩放手柄 */}
+              {/* 四角句柄优化，增加触摸面积 */}
               <div 
-                style={{ position: 'absolute', right: -6, bottom: -6, width: 12, height: 12, background: '#1890ff', cursor: 'nwse-resize', borderRadius: '50%' }} 
-                onMouseDown={(e) => {
-                  e.stopPropagation();
-                  const startX = e.clientX;
-                  const startY = e.clientY;
-                  const startW = crop.width;
-                  const startH = crop.height;
-                  
-                  const onMove = (me: MouseEvent) => {
-                    const newW = Math.max(20, startW + (me.clientX - startX));
-                    const newH = Math.max(20, startH + (me.clientY - startY));
-                    setCrop(prev => ({ ...prev, width: newW, height: newH }));
-                  };
-                  const onUp = () => {
-                    document.removeEventListener('mousemove', onMove);
-                    document.removeEventListener('mouseup', onUp);
-                  };
-                  document.addEventListener('mousemove', onMove);
-                  document.addEventListener('mouseup', onUp);
+                onMouseDown={onResizeStart}
+                onTouchStart={onResizeStart}
+                style={{ 
+                  position: 'absolute', right: -10, bottom: -10, 
+                  width: 24, height: 24, background: '#1890ff', 
+                  borderRadius: '50%', cursor: 'nwse-resize',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  border: '3px solid #fff', boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
                 }}
-              />
+              >
+                <ExpandOutlined style={{ color: '#fff', fontSize: 10 }} />
+              </div>
             </div>
           </div>
 
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <Space direction="vertical" size={0}>
-              <Title level={5} style={{ margin: 0 }}>批量处理清单 ({imageList.length} 张)</Title>
-              <Text type="secondary" style={{ fontSize: 12 }}>
-                裁剪尺寸: {Math.round(crop.width)} x {Math.round(crop.height)} px
-              </Text>
-            </Space>
-            <Space>
-              <Button danger icon={<DeleteOutlined />} onClick={() => setImageList([])} disabled={isProcessing}>清空</Button>
-              <Button type="primary" icon={<ScissorOutlined />} onClick={handleStartCrop} loading={isProcessing} style={{ background: '#000' }}>
-                开始批量裁剪
-              </Button>
-            </Space>
+          {/* 2. 操作按钮区：独立于图片之外 */}
+          <div style={{ padding: '0 4px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <Space direction="vertical" size={0}>
+                <Text strong>{imageList.length} 张待处理</Text>
+                <Text type="secondary" style={{ fontSize: 11 }}>尺寸: {Math.round(crop.width)}x{Math.round(crop.height)} px</Text>
+              </Space>
+              <Space>
+                <Button size={mobile ? 'middle' : 'large'} onClick={() => setImageList([])} icon={<DeleteOutlined />} disabled={isProcessing}>清空</Button>
+                <Button 
+                  type="primary" 
+                  size={mobile ? 'middle' : 'large'} 
+                  icon={<ScissorOutlined />} 
+                  onClick={handleStartCrop} 
+                  loading={isProcessing} 
+                  style={{ background: '#000', border: 'none' }}
+                >
+                  批量处理
+                </Button>
+              </Space>
+            </div>
+            {isProcessing && <Progress percent={processProgress} strokeColor="#000" size="small" />}
           </div>
 
-          {isProcessing && <Progress percent={processProgress} strokeColor="#000" />}
-
-          <List
-            grid={{ gutter: 16, xs: 2, sm: 3, md: 4 }}
-            dataSource={imageList}
-            renderItem={item => (
-              <List.Item>
-                <Card cover={
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={item.preview} alt={item.file.name} style={{ height: 100, objectFit: 'cover' }} />
-                } size="small">
-                  <Card.Meta title={<Text ellipsis style={{ fontSize: 12 }}>{item.file.name}</Text>} />
-                </Card>
-              </List.Item>
-            )}
-          />
+          {/* 3. 底部预览列表 */}
+          {!mobile && (
+            <List
+              grid={{ gutter: 12, column: 6 }}
+              dataSource={imageList}
+              renderItem={item => (
+                <List.Item style={{ marginBottom: 0 }}>
+                  <Card 
+                    // eslint-disable-next-line @next/next/no-img-element
+                    cover={<img src={item.preview} alt="item" style={{ height: 60, objectFit: 'cover' }} />} 
+                    bodyStyle={{ display: 'none' }}
+                    style={{ borderRadius: 6, overflow: 'hidden' }}
+                  />
+                </List.Item>
+              )}
+            />
+          )}
         </div>
       )}
     </Card>
