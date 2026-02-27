@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { Layout, Typography, Input, InputNumber, Switch, Card, message, Tabs, Select, Spin, Space, Button } from 'antd';
 import { ArrowLeftOutlined, LockOutlined, UnlockOutlined, LoadingOutlined, CheckCircleOutlined, ThunderboltOutlined } from '@ant-design/icons';
 import Link from 'next/link';
@@ -54,7 +54,10 @@ const ConfigField: React.FC<{
   const [locked, setLocked] = useState(item.type === 'password');
   const [success, setSuccess] = useState(false);
 
-  useEffect(() => { setValue(initialValue); }, [initialValue]);
+  // 仅在初次加载或外部真正更新时同步
+  useEffect(() => {
+    setValue(initialValue);
+  }, [initialValue]);
 
   const triggerSave = async (newValue: unknown) => {
     if (item.type === 'password' && locked && newValue === '********') return;
@@ -112,19 +115,33 @@ export default function AdminSettingsPage() {
   const [testing, setTesting] = useState(false);
   const { mobile } = useResponsive();
   const router = useRouter();
-  const auth = getAuth();
+  const isFetched = useRef(false);
 
   const fetchValues = useCallback(async () => {
+    const auth = getAuth();
     if (!auth || auth.user.role !== 'ADMIN') { router.push('/'); return; }
+    
+    // 防止重复拉取
+    if (isFetched.current) return;
+    
     setLoading(true);
     try {
       const configRes = await fetch('/api/proxy/config/all', { headers: getAuthHeader() });
       const configData = (await configRes.json()) as { success: boolean; data: Record<string, unknown> };
-      if (configData.success) setConfigValues(configData.data);
-    } catch { message.error('获取配置数值失败'); } finally { setLoading(false); }
-  }, [router, auth]);
+      if (configData.success) {
+        setConfigValues(configData.data);
+        isFetched.current = true;
+      }
+    } catch { 
+      message.error('获取配置数值失败'); 
+    } finally { 
+      setLoading(false); 
+    }
+  }, [router]);
 
-  useEffect(() => { fetchValues(); }, [fetchValues]);
+  useEffect(() => { 
+    fetchValues(); 
+  }, [fetchValues]);
 
   const testSmtp = async () => {
     setTesting(true);
@@ -140,7 +157,7 @@ export default function AdminSettingsPage() {
     } catch { message.error('测试失败'); } finally { setTesting(false); }
   };
 
-  if (loading) return <div style={{ padding: 100, textAlign: 'center' }}><Spin tip="拉取实时配置..." /></div>;
+  if (loading && !isFetched.current) return <div style={{ padding: 100, textAlign: 'center' }}><Spin tip="拉取实时配置..." /></div>;
 
   const groups = Array.from(new Set(LOCAL_SYSTEM_CONFIG_SCHEMA.map(s => s.group)));
   const tabItems = groups.map(groupName => ({
