@@ -44,7 +44,7 @@ export default function Home() {
   const tools = [
     { title: '文档转换', desc: '支持 DOCX 转 PDF，秒级处理', icon: <FileText size={24} />, path: '/tools/convert', color: '#1f1f1f' },
     { title: 'Markdown 转换', desc: '导出为高质量 PDF、DOCX 或 PNG 图片', icon: <FileDown size={24} />, path: '/tools/markdown', color: '#1f1f1f' },
-    { title: '图片批量裁剪', desc: '在同一位置裁剪多张图片，纯前端处理', icon: <ScissorOutlined style={{ fontSize: 24 }} />, path: '/tools/image-crop', color: '#1f1f1f' }
+    { title: '图片批量裁剪', desc: '在同一位置裁剪多张图片', icon: <ScissorOutlined style={{ fontSize: 24 }} />, path: '/tools/image-crop', color: '#1f1f1f' }
   ];
 
   const userMenuItems: MenuProps['items'] = [

@@ -24,7 +24,7 @@ export default function ImageCropPage() {
           <Link href="/"><Button icon={<ArrowLeft size={16} />} type="text" /></Link>
           <div>
             <Title level={2} style={{ margin: 0 }}>图片批量裁剪</Title>
-            <Text type="secondary">在同一位置批量裁剪多张图片，纯前端处理，后端打包</Text>
+            <Text type="secondary">在同一位置批量裁剪多张图片</Text>
           </div>
         </div>
 

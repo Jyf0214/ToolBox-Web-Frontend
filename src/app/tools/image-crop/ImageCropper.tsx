@@ -1,8 +1,8 @@
 'use client';
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Upload, Button, Card, Space, Typography, message, List, Progress } from 'antd';
-import { ScissorOutlined, DeleteOutlined, PictureOutlined, ExpandOutlined } from '@ant-design/icons';
+import { Upload, Button, Card, Space, Typography, message, List, Progress, Alert } from 'antd';
+import { ScissorOutlined, DeleteOutlined, PictureOutlined, ExpandOutlined, DownloadOutlined } from '@ant-design/icons';
 import { v4 as uuidv4 } from 'uuid';
 import { getAuthHeader } from '@/lib/auth';
 import { useResponsive } from 'antd-style';
@@ -23,11 +23,18 @@ interface CropData {
   height: number;
 }
 
+interface ResultJob {
+  jobId: string;
+  token: string;
+}
+
 export default function ImageCropper() {
   const [imageList, setImageList] = useState<ImageItem[]>([]);
   const [crop, setCrop] = useState<CropData>({ x: 20, y: 20, width: 150, height: 150 });
   const [isProcessing, setIsProcessing] = useState(false);
   const [processProgress, setProcessProgress] = useState(0);
+  const [resultJob, setResultJob] = useState<ResultJob | null>(null);
+  
   const imgRef = useRef<HTMLImageElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const { mobile } = useResponsive();
@@ -36,16 +43,15 @@ export default function ImageCropper() {
     return () => imageList.forEach(item => URL.revokeObjectURL(item.preview));
   }, [imageList]);
 
-  // 计算并执行裁剪上传
   const handleStartCrop = async () => {
     if (imageList.length === 0 || !imgRef.current) return;
     setIsProcessing(true);
     setProcessProgress(0);
+    setResultJob(null);
 
     const formData = new FormData();
     const firstImg = imgRef.current;
     
-    // 关键：计算物理像素与显示像素的比例
     const scaleX = firstImg.naturalWidth / firstImg.clientWidth;
     const scaleY = firstImg.naturalHeight / firstImg.clientHeight;
 
@@ -72,8 +78,8 @@ export default function ImageCropper() {
       const data = (await res.json()) as { success: boolean; jobId: string; token: string };
 
       if (data.success) {
+        setResultJob({ jobId: data.jobId, token: data.token });
         message.success('批量裁剪并打包成功！');
-        window.open(`/api/proxy/image/download/${data.jobId}?token=${data.token}`, '_blank');
       }
     } catch {
       message.error('图像处理服务异常');
@@ -92,7 +98,6 @@ export default function ImageCropper() {
         canvas.height = rc.height;
         const ctx = canvas.getContext('2d');
         if (!ctx) return reject('Canvas context error');
-        
         ctx.drawImage(img, rc.x, rc.y, rc.width, rc.height, 0, 0, rc.width, rc.height);
         canvas.toBlob((blob) => {
           URL.revokeObjectURL(img.src);
@@ -103,23 +108,19 @@ export default function ImageCropper() {
     });
   };
 
-  // 通用坐标更新逻辑
   const updateCrop = useCallback((updates: Partial<CropData>) => {
     if (!containerRef.current) return;
     const { width: cw, height: ch } = containerRef.current.getBoundingClientRect();
-    
     setCrop(prev => {
       const next = { ...prev, ...updates };
-      // 边界锁定
       next.x = Math.max(0, Math.min(next.x, cw - next.width));
       next.y = Math.max(0, Math.min(next.y, ch - next.height));
-      next.width = Math.min(next.width, cw - next.x);
-      next.height = Math.min(next.height, ch - next.y);
+      next.width = Math.max(10, Math.min(next.width, cw - next.x));
+      next.height = Math.max(10, Math.min(next.height, ch - next.y));
       return next;
     });
   }, []);
 
-  // 移动/缩放统一事件处理 (兼容 Mouse & Touch)
   const bindEvents = (onMove: (e: { clientX: number, clientY: number }) => void) => {
     const moveHandler = (e: MouseEvent | TouchEvent) => {
       const point = 'touches' in e ? e.touches[0] : e;
@@ -142,7 +143,6 @@ export default function ImageCropper() {
     const startX = point.clientX;
     const startY = point.clientY;
     const startCrop = { ...crop };
-
     bindEvents((movePoint) => {
       const dx = movePoint.clientX - startX;
       const dy = movePoint.clientY - startY;
@@ -157,11 +157,10 @@ export default function ImageCropper() {
     const startY = point.clientY;
     const startW = crop.width;
     const startH = crop.height;
-
     bindEvents((movePoint) => {
       const dx = movePoint.clientX - startX;
       const dy = movePoint.clientY - startY;
-      updateCrop({ width: Math.max(20, startW + dx), height: Math.max(20, startH + dy) });
+      updateCrop({ width: startW + dx, height: startH + dy });
     });
   };
 
@@ -179,12 +178,32 @@ export default function ImageCropper() {
         >
           <p className="ant-upload-drag-icon"><PictureOutlined style={{ color: '#000' }} /></p>
           <p className="ant-upload-text">点击或拖拽图片到此处</p>
-          <p className="ant-upload-hint">支持批量同步裁剪 · 移动端已优化</p>
+          <p className="ant-upload-hint">支持批量同步裁剪</p>
         </Dragger>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+          {resultJob && (
+            <Alert
+              message="处理完成"
+              description="所有图片已按指定区域裁剪并打包。"
+              type="success"
+              showIcon
+              action={
+                <Button 
+                  type="primary" 
+                  size="small" 
+                  icon={<DownloadOutlined />}
+                  onClick={() => window.open(`/api/proxy/image/download/${resultJob.jobId}?token=${resultJob.token}`, '_blank')}
+                  style={{ background: '#52c41a', border: 'none' }}
+                >
+                  点击下载压缩包
+                </Button>
+              }
+            />
+          )}
+
           <Title level={mobile ? 5 : 4} style={{ margin: 0, textAlign: 'center' }}>裁剪区域预览</Title>
-          {/* 1. 裁剪主操作区：增加 max-height 限制 */}
+          
           <div 
             ref={containerRef}
             style={{ 
@@ -196,7 +215,7 @@ export default function ImageCropper() {
               maxHeight: mobile ? '50vh' : '60vh',
               maxWidth: '100%',
               overflow: 'hidden',
-              touchAction: 'none', // 关键：禁止移动端默认滚动
+              touchAction: 'none',
               background: '#f9f9f9',
               borderRadius: 8
             }}
@@ -210,7 +229,6 @@ export default function ImageCropper() {
               draggable={false}
             />
             
-            {/* 裁剪遮罩 */}
             <div 
               onMouseDown={onDragStart}
               onTouchStart={onDragStart}
@@ -227,7 +245,6 @@ export default function ImageCropper() {
                 boxSizing: 'border-box'
               }}
             >
-              {/* 四角句柄优化，增加触摸面积 */}
               <div 
                 onMouseDown={onResizeStart}
                 onTouchStart={onResizeStart}
@@ -244,7 +261,6 @@ export default function ImageCropper() {
             </div>
           </div>
 
-          {/* 2. 操作按钮区：独立于图片之外 */}
           <div style={{ padding: '0 4px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
               <Space direction="vertical" size={0}>
@@ -252,7 +268,7 @@ export default function ImageCropper() {
                 <Text type="secondary" style={{ fontSize: 11 }}>尺寸: {Math.round(crop.width)}x{Math.round(crop.height)} px</Text>
               </Space>
               <Space>
-                <Button size={mobile ? 'middle' : 'large'} onClick={() => setImageList([])} icon={<DeleteOutlined />} disabled={isProcessing}>清空</Button>
+                <Button size={mobile ? 'middle' : 'large'} onClick={() => { setImageList([]); setResultJob(null); }} icon={<DeleteOutlined />} disabled={isProcessing}>清空</Button>
                 <Button 
                   type="primary" 
                   size={mobile ? 'middle' : 'large'} 
@@ -261,14 +277,13 @@ export default function ImageCropper() {
                   loading={isProcessing} 
                   style={{ background: '#000', border: 'none' }}
                 >
-                  批量处理
+                  {resultJob ? '重新批量处理' : '批量处理'}
                 </Button>
               </Space>
             </div>
             {isProcessing && <Progress percent={processProgress} strokeColor="#000" size="small" />}
           </div>
 
-          {/* 3. 底部预览列表 */}
           {!mobile && (
             <List
               grid={{ gutter: 12, column: 6 }}
@@ -278,7 +293,7 @@ export default function ImageCropper() {
                   <Card 
                     // eslint-disable-next-line @next/next/no-img-element
                     cover={<img src={item.preview} alt="item" style={{ height: 60, objectFit: 'cover' }} />} 
-                    bodyStyle={{ display: 'none' }}
+                    styles={{ body: { display: 'none' } }}
                     style={{ borderRadius: 6, overflow: 'hidden' }}
                   />
                 </List.Item>
