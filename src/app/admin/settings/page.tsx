@@ -146,6 +146,7 @@ export default function AdminSettingsPage() {
   const testSmtp = async () => {
     setTesting(true);
     try {
+      // 📝 关键：确保发送的是当前页面上最新的 state
       const res = await fetch('/api/proxy/config/test-smtp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
@@ -154,7 +155,7 @@ export default function AdminSettingsPage() {
       const data = (await res.json()) as { success: boolean; message: string };
       if (data.success) message.success('SMTP 连接成功');
       else message.error(data.message);
-    } catch { message.error('测试失败'); } finally { setTesting(false); }
+    } catch { message.error('测试请求失败，请检查网络'); } finally { setTesting(false); }
   };
 
   if (loading && !isFetched.current) return <div style={{ padding: 100, textAlign: 'center' }}><Spin tip="拉取实时配置..." /></div>;
