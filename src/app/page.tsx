@@ -82,9 +82,11 @@ export default function Home() {
             </Space>
             
             {!isMobile && (
-              <Tooltip title={getStatusText()}>
-                <Badge status={getStatusColor()} text={<Text type="secondary" style={{ fontSize: 12 }}>{getStatusText()}</Text>} />
-              </Tooltip>
+              <Link href="/status">
+                <Tooltip title={getStatusText()}>
+                  <Badge status={getStatusColor()} text={<Text type="secondary" style={{ fontSize: 12 }}>{getStatusText()}</Text>} />
+                </Tooltip>
+              </Link>
             )}
           </Space>
           
@@ -117,9 +119,11 @@ export default function Home() {
             </div>
 
             {isMobile && (
-              <div style={{ marginBottom: 24, padding: '8px 12px', background: '#f9f9f9', borderRadius: 8 }}>
-                <Space><Server size={14} /><Text type="secondary" style={{ fontSize: 12 }}>{getStatusText()}</Text></Space>
-              </div>
+              <Link href="/status" style={{ display: 'block', marginBottom: 24 }}>
+                <div style={{ padding: '8px 12px', background: '#f9f9f9', borderRadius: 8 }}>
+                  <Space><Server size={14} /><Text type="secondary" style={{ fontSize: 12 }}>{getStatusText()}</Text></Space>
+                </div>
+              </Link>
             )}
 
             <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(300px, 1fr))', gap: 24 }}>
